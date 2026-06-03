@@ -6,20 +6,20 @@ import {
 import { useAuth } from '../context/AuthContext'
 
 const allNavItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'staff', 'finance', 'viewer'] },
-  { to: '/pengajuan', icon: FileText, label: 'Daftar Pengajuan', roles: ['admin', 'staff', 'finance', 'viewer'] },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard',        roles: ['admin', 'staff', 'finance', 'viewer', 'head', 'bod'] },
+  { to: '/pengajuan', icon: FileText, label: 'Daftar Pengajuan', roles: ['admin', 'staff', 'finance', 'viewer', 'head', 'bod'] },
   { to: '/pengajuan/baru', icon: PlusCircle, label: 'Buat Pengajuan', roles: ['admin', 'staff'] },
-  { to: '/laporan', icon: BarChart2, label: 'Laporan', roles: ['admin', 'finance', 'viewer'] },
+  { to: '/laporan', icon: BarChart2, label: 'Laporan',         roles: ['admin', 'finance', 'viewer', 'head', 'bod'] },
   { label: 'Master Data', type: 'section', roles: ['admin'] },
-  { to: '/master/kapal', icon: Ship, label: 'Kapal', roles: ['admin'] },
+  { to: '/master/kapal', icon: Ship, label: 'Kapal',           roles: ['admin'] },
   { to: '/master/departemen', icon: Building2, label: 'Departemen', roles: ['admin'] },
-  { to: '/master/vendor', icon: Package, label: 'Vendor', roles: ['admin'] },
+  { to: '/master/vendor', icon: Package, label: 'Vendor',      roles: ['admin'] },
   { to: '/master/budget', icon: DollarSign, label: 'Kode Budget', roles: ['admin'] },
   { to: '/master/bisnis-unit', icon: Layers, label: 'Bisnis Unit', roles: ['admin'] },
   { to: '/master/perusahaan', icon: Briefcase, label: 'Perusahaan', roles: ['admin'] },
   { label: 'Administrasi', type: 'section', roles: ['admin'] },
   { to: '/admin/users', icon: Users2, label: 'Manajemen User', roles: ['admin'] },
-  { to: '/profil', icon: UserCircle, label: 'Profil Saya', roles: ['admin', 'staff', 'finance', 'viewer'] },
+  { to: '/profil', icon: UserCircle, label: 'Profil Saya',     roles: ['admin', 'staff', 'finance', 'viewer', 'head', 'bod'] },
 ]
 
 export default function Sidebar({ open, onClose }) {
@@ -77,7 +77,9 @@ export default function Sidebar({ open, onClose }) {
         <div className="border-t border-blue-800 px-4 py-3">
           <p className="text-xs text-blue-300">Login sebagai:</p>
           <p className="text-sm font-medium text-white truncate">{currentUser?.full_name}</p>
-          <span className="text-xs bg-blue-700 text-blue-100 px-2 py-0.5 rounded capitalize">{role}</span>
+          <span className="text-xs bg-blue-700 text-blue-100 px-2 py-0.5 rounded">
+            {{ admin: 'Admin', staff: 'Staff', finance: 'Finance', viewer: 'Viewer', head: 'Kepala BU', bod: 'BOD / Manajemen' }[role] ?? role}
+          </span>
         </div>
       </aside>
     </>

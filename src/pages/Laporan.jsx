@@ -7,6 +7,7 @@ import { Select } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '../components/ui/table'
 import { useMasterData } from '../context/MasterDataContext'
 import { getPaymentForms, getAllPaymentItemTotals } from '../services/paymentService'
+import { useBusinessUnitFilter } from '../hooks/useBusinessUnitFilter'
 import { formatRupiah } from '../lib/utils'
 import { BarChart2, Download, FileDown, Filter, X, Layers } from 'lucide-react'
 
@@ -22,17 +23,21 @@ const STATUS_LABELS = {
 
 export default function Laporan() {
   const { businessUnits, companies, departments, vendors } = useMasterData()
-  const [paymentForms, setPaymentForms] = useState([])
+  const { applyFilters } = useBusinessUnitFilter()
+  const [allForms, setAllForms] = useState([])
   const [itemTotals, setItemTotals] = useState({})
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState(EMPTY_FILTER)
+
+  // Filter sesuai role: staff=milik sendiri, finance/head=BU sendiri, lainnya=semua
+  const paymentForms = applyFilters(allForms)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
       try {
         const [forms, totals] = await Promise.all([getPaymentForms(), getAllPaymentItemTotals()])
-        setPaymentForms(forms)
+        setAllForms(forms)
         setItemTotals(totals)
       } catch (err) {
         console.error(err)

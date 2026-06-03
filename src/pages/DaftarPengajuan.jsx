@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import StatusBadge from '../components/StatusBadge'
 import { useMasterData } from '../context/MasterDataContext'
 import { getPaymentForms, getAllPaymentItemTotals } from '../services/paymentService'
+import { useBusinessUnitFilter } from '../hooks/useBusinessUnitFilter'
 import { formatRupiah, formatDate } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -18,11 +19,15 @@ import {
 export default function DaftarPengajuan() {
   const { currentUser } = useAuth()
   const { vendors, companies, departments } = useMasterData()
+  const { applyFilters } = useBusinessUnitFilter()
   const navigate = useNavigate()
 
-  const [paymentForms, setPaymentForms] = useState([])
+  const [allForms, setAllForms] = useState([])
   const [itemTotals, setItemTotals] = useState({})
   const [loading, setLoading] = useState(true)
+
+  // Filter sesuai role: staff=milik sendiri, finance/head=BU sendiri, lainnya=semua
+  const paymentForms = applyFilters(allForms)
 
   const [search, setSearch] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
@@ -37,7 +42,7 @@ export default function DaftarPengajuan() {
       setLoading(true)
       try {
         const [forms, totals] = await Promise.all([getPaymentForms(), getAllPaymentItemTotals()])
-        setPaymentForms(forms)
+        setAllForms(forms)
         setItemTotals(totals)
       } catch (err) {
         console.error(err)

@@ -40,7 +40,7 @@ export default function App() {
           <Route path="/pengajuan/baru" element={<AppLayout><ProtectedRoute allowedRoles={['admin', 'staff']}><BuatPengajuan /></ProtectedRoute></AppLayout>} />
           <Route path="/pengajuan/:id" element={<AppLayout><DetailPengajuan /></AppLayout>} />
           <Route path="/pengajuan/:id/edit" element={<AppLayout><ProtectedRoute allowedRoles={['admin', 'staff']}><EditPengajuan /></ProtectedRoute></AppLayout>} />
-          <Route path="/laporan" element={<AppLayout><ProtectedRoute allowedRoles={['admin', 'finance', 'viewer']}><Laporan /></ProtectedRoute></AppLayout>} />
+          <Route path="/laporan" element={<AppLayout><ProtectedRoute allowedRoles={['admin', 'finance', 'viewer', 'head', 'bod']}><Laporan /></ProtectedRoute></AppLayout>} />
           <Route path="/master/kapal" element={<AppLayout><ProtectedRoute allowedRoles={['admin']}><MasterKapal /></ProtectedRoute></AppLayout>} />
           <Route path="/master/departemen" element={<AppLayout><ProtectedRoute allowedRoles={['admin']}><MasterDepartemen /></ProtectedRoute></AppLayout>} />
           <Route path="/master/vendor" element={<AppLayout><ProtectedRoute allowedRoles={['admin']}><MasterVendor /></ProtectedRoute></AppLayout>} />

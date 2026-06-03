@@ -9,6 +9,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '..
 import { AlertDialog } from '../components/ui/alert-dialog'
 import StatusBadge from '../components/StatusBadge'
 import { useMasterData } from '../context/MasterDataContext'
+import { useBusinessUnitFilter } from '../hooks/useBusinessUnitFilter'
 import {
   getPaymentFormById, getPaymentItems, getAttachments,
   getAuditLogs, updateFormStatus,
@@ -25,6 +26,7 @@ export default function DetailPengajuan() {
   const navigate = useNavigate()
   const { currentUser } = useAuth()
   const { vendors, companies, departments } = useMasterData()
+  const { isFormInUserBU } = useBusinessUnitFilter()
 
   const [form, setForm] = useState(null)
   const [items, setItems] = useState([])
@@ -85,11 +87,17 @@ export default function DetailPengajuan() {
   const role = currentUser?.role
   const isOwner = form.created_by === currentUser?.id || role === 'admin'
 
-  const canEdit = role === 'admin' || (role === 'staff' && ['draft', 'rejected'].includes(form.status) && isOwner)
-  const canSubmit = (role === 'admin' || (role === 'staff' && isOwner)) && form.status === 'draft'
-  const canReceive = (role === 'finance' || role === 'admin') && form.status === 'submitted'
-  const canPay = (role === 'finance' || role === 'admin') && form.status === 'received'
-  const canReject = (role === 'finance' || role === 'admin') && ['submitted', 'received'].includes(form.status)
+  // head dan bod hanya bisa lihat, tidak bisa aksi apapun
+  const viewOnly = ['head', 'bod', 'viewer'].includes(role)
+
+  // finance hanya bisa aksi jika form ada di BU-nya
+  const formInBU = isFormInUserBU(form)
+
+  const canEdit    = !viewOnly && (role === 'admin' || (role === 'staff' && ['draft', 'rejected'].includes(form.status) && isOwner))
+  const canSubmit  = !viewOnly && (role === 'admin' || (role === 'staff' && isOwner)) && form.status === 'draft'
+  const canReceive = !viewOnly && (role === 'finance' || role === 'admin') && form.status === 'submitted' && formInBU
+  const canPay     = !viewOnly && (role === 'finance' || role === 'admin') && form.status === 'received' && formInBU
+  const canReject  = !viewOnly && (role === 'finance' || role === 'admin') && ['submitted', 'received'].includes(form.status) && formInBU
 
   const handleAction = async (action) => {
     if (action === 'reject' && !rejectReason.trim()) {

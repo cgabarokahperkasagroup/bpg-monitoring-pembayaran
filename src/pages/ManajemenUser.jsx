@@ -8,19 +8,38 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../components/ui/dialog'
 import { Badge } from '../components/ui/badge'
 import { useMasterData } from '../context/MasterDataContext'
+import { useAuth } from '../context/AuthContext'
 import { updateUserProfile, toggleUserActive } from '../services/userService'
-import { Plus, Power, Search, UserCog } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { Plus, Power, Search, UserCog, Eye, EyeOff } from 'lucide-react'
 
-const roleLabels = { admin: 'Admin', staff: 'Staff', finance: 'Finance', viewer: 'Viewer' }
-const roleColors = { admin: 'bg-purple-100 text-purple-700', staff: 'bg-blue-100 text-blue-700', finance: 'bg-green-100 text-green-700', viewer: 'bg-gray-100 text-gray-700' }
+const roleLabels = {
+  admin:   'Admin',
+  staff:   'Staff',
+  finance: 'Finance',
+  viewer:  'Viewer',
+  head:    'Kepala BU',
+  bod:     'BOD / Manajemen',
+}
+const roleColors = {
+  admin:   'bg-purple-100 text-purple-700',
+  staff:   'bg-blue-100 text-blue-700',
+  finance: 'bg-green-100 text-green-700',
+  viewer:  'bg-gray-100 text-gray-700',
+  head:    'bg-orange-100 text-orange-700',
+  bod:     'bg-rose-100 text-rose-700',
+}
+
+const EMPTY_FORM = { full_name: '', email: '', password: '', role: 'staff', department_id: '', company_id: '', business_unit_id: '' }
 
 export default function ManajemenUser() {
-  const { users, departments, companies, reload } = useMasterData()
-  const [search, setSearch] = useState('')
-  const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ full_name: '', email: '', role: 'staff', department_id: '', company_id: '' })
-  const [editId, setEditId] = useState(null)
-  const [saving, setSaving] = useState(false)
+  const { users, departments, companies, businessUnits, reload } = useMasterData()
+  const [search, setSearch]     = useState('')
+  const [modal, setModal]       = useState(null)
+  const [form, setForm]         = useState(EMPTY_FORM)
+  const [editId, setEditId]     = useState(null)
+  const [saving, setSaving]     = useState(false)
+  const [showPass, setShowPass] = useState(false)
 
   const filtered = users.filter(u =>
     u.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -28,32 +47,67 @@ export default function ManajemenUser() {
   )
 
   const openAdd = () => {
-    setForm({ full_name: '', email: '', role: 'staff', department_id: '', company_id: '' })
+    setForm(EMPTY_FORM)
     setEditId(null)
+    setShowPass(false)
     setModal('form')
   }
 
   const openEdit = (u) => {
-    setForm({ full_name: u.full_name, email: u.email, role: u.role, department_id: u.department_id || '', company_id: u.company_id || '' })
+    setForm({ full_name: u.full_name, email: u.email, password: '', role: u.role, department_id: u.department_id || '', company_id: u.company_id || '', business_unit_id: u.business_unit_id || '' })
     setEditId(u.id)
+    setShowPass(false)
     setModal('form')
   }
 
   const handleSave = async () => {
     if (!form.full_name || !form.email) return alert('Nama dan email wajib diisi')
+
     setSaving(true)
     try {
       if (editId) {
+        // Edit: update profil saja (password tidak diubah di sini)
         await updateUserProfile(editId, {
-          full_name: form.full_name,
-          role: form.role,
-          department_id: form.department_id || null,
-          company_id: form.company_id || null,
+          full_name:        form.full_name,
+          role:             form.role,
+          department_id:    form.department_id    || null,
+          company_id:       form.company_id       || null,
+          business_unit_id: form.business_unit_id || null,
         })
         await reload()
         setModal(null)
       } else {
-        alert('Untuk menambah user baru, gunakan fitur undangan email Supabase Auth. Hubungi Admin Sistem.')
+        // Tambah user baru via Edge Function
+        if (!form.password) return alert('Password wajib diisi untuk user baru')
+        if (form.password.length < 6) return alert('Password minimal 6 karakter')
+
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch(
+          'https://mgxdvnnvruoyhnzgrtur.supabase.co/functions/v1/create-user',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({
+              email:            form.email,
+              password:         form.password,
+              full_name:        form.full_name,
+              role:             form.role,
+              department_id:    form.department_id    || null,
+              company_id:       form.company_id       || null,
+              business_unit_id: form.business_unit_id || null,
+            }),
+          }
+        )
+
+        const result = await res.json()
+        if (!res.ok) throw new Error(result.error || 'Gagal membuat user')
+
+        await reload()
+        setModal(null)
+        alert(`Akun berhasil dibuat!\nEmail: ${form.email}\nPassword: ${form.password}`)
       }
     } catch (err) {
       alert('Gagal menyimpan: ' + err.message)
@@ -72,7 +126,7 @@ export default function ManajemenUser() {
   }
 
   const getDeptName = (id) => departments.find(d => d.id === id)?.name || '—'
-  const getCompany = (id) => companies.find(c => c.id === id)?.code || '—'
+  const getCompany  = (id) => companies.find(c => c.id === id)?.code   || '—'
 
   return (
     <div className="space-y-5">
@@ -88,7 +142,12 @@ export default function ManajemenUser() {
         <CardContent className="p-4">
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-            <Input placeholder="Cari nama atau email..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+            <Input
+              placeholder="Cari nama atau email..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
           </div>
         </CardContent>
       </Card>
@@ -107,7 +166,13 @@ export default function ManajemenUser() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map(u => (
+            {filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-10 text-gray-400">
+                  Tidak ada user ditemukan
+                </TableCell>
+              </TableRow>
+            ) : filtered.map(u => (
               <TableRow key={u.id} className={!u.is_active ? 'opacity-50' : ''}>
                 <TableCell className="pl-4 font-medium">{u.full_name}</TableCell>
                 <TableCell className="text-sm text-gray-600">{u.email}</TableCell>
@@ -119,7 +184,9 @@ export default function ManajemenUser() {
                 <TableCell className="text-sm">{getDeptName(u.department_id)}</TableCell>
                 <TableCell className="text-sm">{getCompany(u.company_id)}</TableCell>
                 <TableCell>
-                  <Badge variant={u.is_active ? 'paid' : 'draft'}>{u.is_active ? 'Aktif' : 'Nonaktif'}</Badge>
+                  <Badge variant={u.is_active ? 'paid' : 'draft'}>
+                    {u.is_active ? 'Aktif' : 'Nonaktif'}
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-center gap-1">
@@ -143,23 +210,63 @@ export default function ManajemenUser() {
         </Table>
       </Card>
 
+      {/* Modal Tambah / Edit User */}
       <Dialog open={modal === 'form'} onClose={() => setModal(null)} className="max-w-lg">
         <DialogClose onClose={() => setModal(null)} />
         <DialogHeader>
           <DialogTitle>{editId ? 'Edit Akun User' : 'Tambah Akun User Baru'}</DialogTitle>
-          {!editId && <p className="text-sm text-gray-500 mt-1">User baru dibuat melalui undangan email oleh Admin Supabase.</p>}
+          {!editId && (
+            <p className="text-sm text-gray-500 mt-1">
+              Akun akan langsung aktif. Sampaikan email dan password kepada user yang bersangkutan.
+            </p>
+          )}
         </DialogHeader>
+
         <div className="space-y-3 mt-2">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Nama Lengkap *</Label>
-              <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
+              <Input
+                value={form.full_name}
+                onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
+                placeholder="Nama lengkap"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Email *</Label>
-              <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} disabled={!!editId} />
+              <Input
+                type="email"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="email@bgp.co.id"
+                disabled={!!editId}
+              />
             </div>
           </div>
+
+          {/* Password — hanya untuk user baru */}
+          {!editId && (
+            <div className="space-y-1.5">
+              <Label>Password * <span className="text-gray-400 font-normal">(min. 6 karakter)</span></Label>
+              <div className="relative">
+                <Input
+                  type={showPass ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  placeholder="Buat password untuk user ini"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(v => !v)}
+                  className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                >
+                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Role *</Label>
@@ -167,6 +274,8 @@ export default function ManajemenUser() {
                 <option value="admin">Admin Sistem</option>
                 <option value="staff">Staff / Pengaju</option>
                 <option value="finance">Finance</option>
+                <option value="head">Kepala Bisnis Unit</option>
+                <option value="bod">BOD / Manajemen</option>
                 <option value="viewer">Viewer</option>
               </Select>
             </div>
@@ -174,10 +283,29 @@ export default function ManajemenUser() {
               <Label>Perusahaan</Label>
               <Select value={form.company_id} onChange={e => setForm(f => ({ ...f, company_id: e.target.value }))}>
                 <option value="">— Tidak ada —</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}
+                {companies.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
               </Select>
             </div>
           </div>
+
+          {/* Bisnis Unit — wajib untuk role head dan finance */}
+          {['head', 'finance'].includes(form.role) && (
+            <div className="space-y-1.5">
+              <Label>
+                Bisnis Unit *
+                <span className="ml-1 text-xs text-gray-400 font-normal">
+                  (menentukan data yang bisa dilihat)
+                </span>
+              </Label>
+              <Select value={form.business_unit_id} onChange={e => setForm(f => ({ ...f, business_unit_id: e.target.value }))}>
+                <option value="">— Pilih Bisnis Unit —</option>
+                {businessUnits.filter(u => u.is_active).map(u => (
+                  <option key={u.id} value={u.id}>{u.code} — {u.name}</option>
+                ))}
+              </Select>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label>Departemen</Label>
             <Select value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))}>
@@ -186,6 +314,7 @@ export default function ManajemenUser() {
             </Select>
           </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
           <Button onClick={handleSave} disabled={saving}>

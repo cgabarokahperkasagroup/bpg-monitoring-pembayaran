@@ -13,6 +13,7 @@ import { Select } from '../components/ui/select'
 import StatusBadge from '../components/StatusBadge'
 import { useMasterData } from '../context/MasterDataContext'
 import { getPaymentForms, getAllPaymentItemTotals } from '../services/paymentService'
+import { useBusinessUnitFilter } from '../hooks/useBusinessUnitFilter'
 import { formatRupiah } from '../lib/utils'
 import {
   FileText, Clock, CheckCircle, Banknote, TrendingUp, AlertTriangle,
@@ -57,16 +58,20 @@ function getMonthLabel(date) {
 
 export default function Dashboard() {
   const { businessUnits, companies, departments, vendors } = useMasterData()
-  const [paymentForms, setPaymentForms] = useState([])
+  const { applyFilters } = useBusinessUnitFilter()
+  const [allForms, setAllForms] = useState([])
   const [itemTotals, setItemTotals] = useState({})
   const [loadingData, setLoadingData] = useState(true)
+
+  // Filter sesuai role: staff=milik sendiri, finance/head=BU sendiri, lainnya=semua
+  const paymentForms = applyFilters(allForms)
 
   useEffect(() => {
     async function load() {
       setLoadingData(true)
       try {
         const [forms, totals] = await Promise.all([getPaymentForms(), getAllPaymentItemTotals()])
-        setPaymentForms(forms)
+        setAllForms(forms)
         setItemTotals(totals)
       } catch (err) {
         console.error(err)

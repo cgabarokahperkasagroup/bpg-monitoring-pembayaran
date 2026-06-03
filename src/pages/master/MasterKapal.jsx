@@ -7,47 +7,49 @@ import { Select } from '../../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../../components/ui/dialog'
 import { Badge } from '../../components/ui/badge'
-import { vessels as initVessels, companies } from '../../data/mockData'
+import { useMasterData } from '../../context/MasterDataContext'
+import { upsertVessel, deleteVessel } from '../../services/masterService'
 import { Plus, Pencil, Power, Search } from 'lucide-react'
 
+const fleets = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII']
+
 export default function MasterKapal() {
-  const [vessels, setVessels] = useState(initVessels)
+  const { vessels, companies, reload } = useMasterData()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '', code: '', company_id: '', fleet: '', is_active: true })
   const [editId, setEditId] = useState(null)
-
-  const fleets = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII']
+  const [saving, setSaving] = useState(false)
 
   const filtered = vessels.filter(v =>
     v.name.toLowerCase().includes(search.toLowerCase()) ||
     v.code.toLowerCase().includes(search.toLowerCase())
   )
 
-  const openAdd = () => {
-    setForm({ name: '', code: '', company_id: '', fleet: '', is_active: true })
-    setEditId(null)
-    setModal('form')
-  }
+  const openAdd = () => { setForm({ name: '', code: '', company_id: '', fleet: '', is_active: true }); setEditId(null); setModal('form') }
+  const openEdit = (v) => { setForm({ name: v.name, code: v.code, company_id: v.company_id, fleet: v.fleet, is_active: v.is_active }); setEditId(v.id); setModal('form') }
 
-  const openEdit = (v) => {
-    setForm({ name: v.name, code: v.code, company_id: v.company_id, fleet: v.fleet, is_active: v.is_active })
-    setEditId(v.id)
-    setModal('form')
-  }
-
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name || !form.code || !form.company_id) return alert('Nama, Kode, dan Perusahaan wajib diisi')
-    if (editId) {
-      setVessels(prev => prev.map(v => v.id === editId ? { ...v, ...form } : v))
-    } else {
-      setVessels(prev => [...prev, { id: `v${Date.now()}`, ...form }])
+    setSaving(true)
+    try {
+      await upsertVessel(editId ? { id: editId, ...form } : { id: `v${Date.now()}`, ...form })
+      await reload()
+      setModal(null)
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
     }
-    setModal(null)
   }
 
-  const toggleActive = (id) => {
-    setVessels(prev => prev.map(v => v.id === id ? { ...v, is_active: !v.is_active } : v))
+  const toggleActive = async (v) => {
+    try {
+      await upsertVessel({ id: v.id, name: v.name, code: v.code, company_id: v.company_id, fleet: v.fleet, is_active: !v.is_active })
+      await reload()
+    } catch (err) {
+      alert('Gagal: ' + err.message)
+    }
   }
 
   return (
@@ -60,14 +62,12 @@ export default function MasterKapal() {
         <Button onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Tambah Kapal</Button>
       </div>
 
-      <Card>
-        <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-            <Input placeholder="Cari nama atau kode kapal..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-          </div>
-        </CardContent>
-      </Card>
+      <Card><CardContent className="p-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <Input placeholder="Cari nama atau kode kapal..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+        </div>
+      </CardContent></Card>
 
       <Card>
         <Table>
@@ -98,7 +98,7 @@ export default function MasterKapal() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(v)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className={`h-8 w-8 ${v.is_active ? 'text-red-500' : 'text-green-500'}`} onClick={() => toggleActive(v.id)}>
+                      <Button variant="ghost" size="icon" className={`h-8 w-8 ${v.is_active ? 'text-red-500' : 'text-green-500'}`} onClick={() => toggleActive(v)}>
                         <Power className="h-4 w-4" />
                       </Button>
                     </div>
@@ -112,9 +112,7 @@ export default function MasterKapal() {
 
       <Dialog open={modal === 'form'} onClose={() => setModal(null)}>
         <DialogClose onClose={() => setModal(null)} />
-        <DialogHeader>
-          <DialogTitle>{editId ? 'Edit Kapal' : 'Tambah Kapal Baru'}</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>{editId ? 'Edit Kapal' : 'Tambah Kapal Baru'}</DialogTitle></DialogHeader>
         <div className="space-y-3 mt-2">
           <div className="space-y-1.5">
             <Label>Nama Kapal *</Label>
@@ -122,7 +120,7 @@ export default function MasterKapal() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Kode (4 huruf) *</Label>
+              <Label>Kode *</Label>
               <Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} maxLength={10} placeholder="BB99" />
             </div>
             <div className="space-y-1.5">
@@ -143,7 +141,7 @@ export default function MasterKapal() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
-          <Button onClick={handleSave}>{editId ? 'Simpan Perubahan' : 'Tambah'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : editId ? 'Simpan Perubahan' : 'Tambah'}</Button>
         </DialogFooter>
       </Dialog>
     </div>

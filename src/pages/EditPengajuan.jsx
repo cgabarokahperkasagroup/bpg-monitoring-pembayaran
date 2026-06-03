@@ -1,39 +1,81 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Textarea } from '../components/ui/textarea'
 import { Select } from '../components/ui/select'
-import { paymentForms, paymentItems, vendors, companies, departments, vessels, budgetCodes } from '../data/mockData'
+import { useMasterData } from '../context/MasterDataContext'
+import { getPaymentFormById, getPaymentItems, updatePaymentForm } from '../services/paymentService'
 import { formatRupiah } from '../lib/utils'
+import { useAuth } from '../context/AuthContext'
 import { ChevronLeft, Plus, Trash2, Save, Send } from 'lucide-react'
 
 export default function EditPengajuan() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { currentUser } = useAuth()
+  const { vendors, companies, departments, vessels, budgetCodes } = useMasterData()
 
-  const form = paymentForms.find(f => f.id === id)
-  const originalItems = paymentItems[id] || []
+  const [form, setForm] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   const [header, setHeader] = useState({
-    invoice_date: form?.invoice_date || '',
-    submission_date: form?.submission_date || '',
-    vendor_id: form?.vendor_id || '',
-    vendor_name_raw: form?.vendor_name_raw || '',
-    useExistingVendor: !form?.vendor_name_raw,
-    company_id: form?.company_id || '',
-    department_id: form?.department_id || '',
-    pic_name: form?.pic_name || '',
+    invoice_date: '',
+    submission_date: '',
+    vendor_id: '',
+    vendor_name_raw: '',
+    useExistingVendor: true,
+    company_id: '',
+    department_id: '',
+    pic_name: '',
   })
 
-  const [items, setItems] = useState(originalItems.map(i => ({
-    ...i,
-    qty: String(i.qty),
-    unit_price: String(i.unit_price),
-    fleet: i.fleet || '',
-  })))
+  const [items, setItems] = useState([])
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const [formData, itemsData] = await Promise.all([
+          getPaymentFormById(id),
+          getPaymentItems(id),
+        ])
+        setForm(formData)
+        setHeader({
+          invoice_date: formData.invoice_date || '',
+          submission_date: formData.submission_date || '',
+          vendor_id: formData.vendor_id || '',
+          vendor_name_raw: formData.vendor_name_raw || '',
+          useExistingVendor: !formData.vendor_name_raw,
+          company_id: formData.company_id || '',
+          department_id: formData.department_id || '',
+          pic_name: formData.pic_name || '',
+        })
+        setItems(itemsData.map(i => ({
+          ...i,
+          qty: String(i.qty),
+          unit_price: String(i.unit_price),
+          fleet: i.fleet || '',
+        })))
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [id])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400">Memuat form...</p>
+      </div>
+    )
+  }
 
   if (!form || !['draft', 'rejected'].includes(form.status)) {
     return (
@@ -46,9 +88,9 @@ export default function EditPengajuan() {
 
   const filteredVessels = vessels.filter(v => v.company_id === header.company_id && v.is_active)
 
-  const updateItem = (id, field, value) => {
+  const updateItem = (itemId, field, value) => {
     setItems(prev => prev.map(item => {
-      if (item.id !== id) return item
+      if (item.id !== itemId) return item
       const updated = { ...item, [field]: value }
       if (field === 'vessel_id') {
         const v = vessels.find(v => v.id === value)
@@ -61,9 +103,48 @@ export default function EditPengajuan() {
   const getItemTotal = (item) => (parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)
   const grandTotal = items.reduce((s, i) => s + getItemTotal(i), 0)
 
-  const handleSave = (action) => {
-    alert(`Form berhasil ${action === 'submit' ? 'diajukan ke Finance' : 'disimpan'}!\n(Data mock, belum tersimpan ke database)`)
-    navigate(`/pengajuan/${id}`)
+  const handleSave = async (action) => {
+    setSaving(true)
+    try {
+      const now = new Date().toISOString()
+      const newStatus = action === 'submit' ? 'submitted' : 'draft'
+
+      const formData = {
+        invoice_date: header.invoice_date || null,
+        submission_date: header.submission_date,
+        vendor_id: header.useExistingVendor ? header.vendor_id : null,
+        vendor_name_raw: header.useExistingVendor ? null : header.vendor_name_raw,
+        company_id: header.company_id,
+        department_id: header.department_id,
+        pic_name: header.pic_name,
+        status: newStatus,
+        submitted_to_finance_at: newStatus === 'submitted' ? now : form.submitted_to_finance_at,
+        rejection_reason: newStatus === 'submitted' ? null : form.rejection_reason,
+      }
+
+      const itemsData = items.map((item, i) => ({
+        id: item.id,
+        item_code: item.item_code || `${form.form_code}-${String(i + 1).padStart(3, '0')}`,
+        description: item.description,
+        qty: parseFloat(item.qty),
+        unit_price: parseFloat(item.unit_price),
+        total: getItemTotal(item),
+        vessel_id: item.vessel_id || null,
+        fleet: item.fleet || null,
+        budget_code_id: item.budget_code_id || null,
+        notes: item.notes || null,
+        invoice_number: item.invoice_number || null,
+        item_number: i + 1,
+      }))
+
+      await updatePaymentForm(id, formData, itemsData)
+      alert(`Form berhasil ${action === 'submit' ? 'diajukan ke Finance' : 'disimpan'}!`)
+      navigate(`/pengajuan/${id}`)
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -74,7 +155,7 @@ export default function EditPengajuan() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Edit Pengajuan</h1>
-          <p className="text-sm text-gray-500 font-mono text-blue-700">{form.form_code}</p>
+          <p className="text-sm font-mono text-blue-700">{form.form_code}</p>
         </div>
       </div>
 
@@ -199,7 +280,10 @@ export default function EditPengajuan() {
 
       <Button
         variant="outline"
-        onClick={() => setItems(prev => [...prev, { id: Date.now(), description: '', qty: '', unit_price: '', vessel_id: '', fleet: '', budget_code_id: '', notes: '', invoice_number: '', item_number: prev.length + 1 }])}
+        onClick={() => setItems(prev => [...prev, {
+          id: `new_${Date.now()}`, description: '', qty: '', unit_price: '',
+          vessel_id: '', fleet: '', budget_code_id: '', notes: '', invoice_number: ''
+        }])}
         className="w-full border-dashed"
       >
         <Plus className="h-4 w-4 mr-2" /> Tambah Item
@@ -210,11 +294,11 @@ export default function EditPengajuan() {
           <ChevronLeft className="h-4 w-4 mr-1" /> Batal
         </Button>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleSave('draft')}>
-            <Save className="h-4 w-4 mr-2" /> Simpan Draft
+          <Button variant="outline" onClick={() => handleSave('draft')} disabled={saving}>
+            <Save className="h-4 w-4 mr-2" /> {saving ? 'Menyimpan...' : 'Simpan Draft'}
           </Button>
-          <Button onClick={() => handleSave('submit')}>
-            <Send className="h-4 w-4 mr-2" /> Ajukan ke Finance
+          <Button onClick={() => handleSave('submit')} disabled={saving}>
+            <Send className="h-4 w-4 mr-2" /> {saving ? 'Mengajukan...' : 'Ajukan ke Finance'}
           </Button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -8,34 +8,65 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../components/ui/dialog'
 import { AlertDialog } from '../components/ui/alert-dialog'
 import StatusBadge from '../components/StatusBadge'
-import { paymentForms, paymentItems, attachments, auditLogs, vendors, companies, departments, users } from '../data/mockData'
+import { useMasterData } from '../context/MasterDataContext'
+import {
+  getPaymentFormById, getPaymentItems, getAttachments,
+  getAuditLogs, updateFormStatus,
+} from '../services/paymentService'
 import { formatRupiah, formatDate, formatDateTime } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import {
   ChevronLeft, Pencil, CheckCircle, Banknote, RotateCcw, Send, FileText, Download,
-  Calendar, Building2, User, Clock, AlertTriangle,
+  AlertTriangle,
 } from 'lucide-react'
-
-const statusSteps = [
-  { status: 'draft', label: 'Draft Dibuat', field: 'created_at' },
-  { status: 'submitted', label: 'Diajukan ke Finance', field: 'submitted_to_finance_at' },
-  { status: 'received', label: 'Dokumen Diterima Finance', field: 'received_by_finance_at' },
-  { status: 'paid', label: 'Pembayaran Dilakukan', field: 'paid_at' },
-]
-
-const statusOrder = { draft: 0, submitted: 1, received: 2, paid: 3, rejected: 1.5 }
 
 export default function DetailPengajuan() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { currentUser } = useAuth()
+  const { vendors, companies, departments } = useMasterData()
 
-  const form = paymentForms.find(f => f.id === id)
+  const [form, setForm] = useState(null)
+  const [items, setItems] = useState([])
+  const [atts, setAtts] = useState([])
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const [actionModal, setActionModal] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [processing, setProcessing] = useState(false)
-  const [currentForm, setCurrentForm] = useState(form)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const [formData, itemsData, attsData, logsData] = await Promise.all([
+          getPaymentFormById(id),
+          getPaymentItems(id),
+          getAttachments(id),
+          getAuditLogs(id),
+        ])
+        setForm(formData)
+        setItems(itemsData)
+        setAtts(attsData)
+        setLogs(logsData)
+      } catch (err) {
+        console.error(err)
+        setForm(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [id])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400">Memuat detail pengajuan...</p>
+      </div>
+    )
+  }
 
   if (!form) {
     return (
@@ -46,23 +77,19 @@ export default function DetailPengajuan() {
     )
   }
 
-  const items = paymentItems[id] || []
-  const atts = attachments[id] || []
-  const logs = auditLogs.filter(l => l.form_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-
-  const vendor = vendors.find(v => v.id === currentForm.vendor_id)
-  const company = companies.find(c => c.id === currentForm.company_id)
-  const dept = departments.find(d => d.id === currentForm.department_id)
+  const vendor = vendors.find(v => v.id === form.vendor_id)
+  const company = companies.find(c => c.id === form.company_id)
+  const dept = departments.find(d => d.id === form.department_id)
   const grandTotal = items.reduce((s, i) => s + i.total, 0)
 
   const role = currentUser?.role
-  const isOwner = currentForm.created_by === currentUser?.id || role === 'admin'
+  const isOwner = form.created_by === currentUser?.id || role === 'admin'
 
-  const canEdit = role === 'admin' || (role === 'staff' && ['draft', 'rejected'].includes(currentForm.status) && isOwner)
-  const canSubmit = (role === 'admin' || (role === 'staff' && isOwner)) && currentForm.status === 'draft'
-  const canReceive = (role === 'finance' || role === 'admin') && currentForm.status === 'submitted'
-  const canPay = (role === 'finance' || role === 'admin') && currentForm.status === 'received'
-  const canReject = (role === 'finance' || role === 'admin') && ['submitted', 'received'].includes(currentForm.status)
+  const canEdit = role === 'admin' || (role === 'staff' && ['draft', 'rejected'].includes(form.status) && isOwner)
+  const canSubmit = (role === 'admin' || (role === 'staff' && isOwner)) && form.status === 'draft'
+  const canReceive = (role === 'finance' || role === 'admin') && form.status === 'submitted'
+  const canPay = (role === 'finance' || role === 'admin') && form.status === 'received'
+  const canReject = (role === 'finance' || role === 'admin') && ['submitted', 'received'].includes(form.status)
 
   const handleAction = async (action) => {
     if (action === 'reject' && !rejectReason.trim()) {
@@ -70,25 +97,33 @@ export default function DetailPengajuan() {
       return
     }
     setProcessing(true)
-    await new Promise(r => setTimeout(r, 600))
-
-    const statusMap = { submit: 'submitted', receive: 'received', pay: 'paid', reject: 'rejected' }
-    const newStatus = statusMap[action]
-    setCurrentForm(f => ({ ...f, status: newStatus }))
-    setActionModal(null)
-    setRejectReason('')
-    setProcessing(false)
-
-    const messages = {
-      submit: 'Form berhasil diajukan ke Finance!',
-      receive: 'Dokumen berhasil dikonfirmasi diterima!',
-      pay: 'Form berhasil ditandai sudah dibayar!',
-      reject: 'Form berhasil dikembalikan ke pengaju.',
+    try {
+      const statusMap = { submit: 'submitted', receive: 'received', pay: 'paid', reject: 'rejected' }
+      const newStatus = statusMap[action]
+      const updated = await updateFormStatus(id, newStatus, currentUser.id, {
+        rejection_reason: action === 'reject' ? rejectReason : undefined,
+      })
+      setForm(updated)
+      // Reload logs
+      const logsData = await getAuditLogs(id)
+      setLogs(logsData)
+      setActionModal(null)
+      setRejectReason('')
+      const messages = {
+        submit: 'Form berhasil diajukan ke Finance!',
+        receive: 'Dokumen berhasil dikonfirmasi diterima!',
+        pay: 'Form berhasil ditandai sudah dibayar!',
+        reject: 'Form berhasil dikembalikan ke pengaju.',
+      }
+      alert(messages[action])
+    } catch (err) {
+      alert('Gagal: ' + err.message)
+    } finally {
+      setProcessing(false)
     }
-    alert(messages[action] + '\n\n(Data mock, belum tersimpan ke database)')
   }
 
-  const getActorName = (actorId) => users.find(u => u.id === actorId)?.full_name || '-'
+  const getActorName = (log) => log.user_profiles?.full_name || '-'
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -100,8 +135,8 @@ export default function DetailPengajuan() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold font-mono text-blue-700">{currentForm.form_code}</h1>
-              <StatusBadge status={currentForm.status} />
+              <h1 className="text-xl font-bold font-mono text-blue-700">{form.form_code}</h1>
+              <StatusBadge status={form.status} />
             </div>
             <p className="text-sm text-gray-500 mt-0.5">Detail Form Pengajuan Pembayaran</p>
           </div>
@@ -116,12 +151,12 @@ export default function DetailPengajuan() {
       </div>
 
       {/* Rejection Notice */}
-      {currentForm.status === 'rejected' && currentForm.rejection_reason && (
+      {form.status === 'rejected' && form.rejection_reason && (
         <div className="flex items-start gap-3 rounded-xl bg-red-50 border border-red-200 p-4">
           <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
           <div>
             <p className="font-semibold text-red-700">Form Dikembalikan oleh Finance</p>
-            <p className="text-sm text-red-600 mt-1">{currentForm.rejection_reason}</p>
+            <p className="text-sm text-red-600 mt-1">{form.rejection_reason}</p>
           </div>
         </div>
       )}
@@ -129,7 +164,6 @@ export default function DetailPengajuan() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left: Form Info */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Info Card */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Informasi Pengajuan</CardTitle>
@@ -145,19 +179,19 @@ export default function DetailPengajuan() {
               </div>
               <div>
                 <p className="text-gray-400 text-xs mb-0.5">Vendor</p>
-                <p className="font-semibold">{currentForm.vendor_name_raw || vendor?.name}</p>
+                <p className="font-semibold">{form.vendor_name_raw || vendor?.name}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-xs mb-0.5">PIC</p>
-                <p className="font-semibold">{currentForm.pic_name}</p>
+                <p className="font-semibold">{form.pic_name}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-xs mb-0.5">Tgl Pembuatan</p>
-                <p>{formatDate(currentForm.submission_date)}</p>
+                <p>{formatDate(form.submission_date)}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-xs mb-0.5">Tgl Invoice</p>
-                <p>{formatDate(currentForm.invoice_date) || '—'}</p>
+                <p>{formatDate(form.invoice_date) || '—'}</p>
               </div>
             </CardContent>
           </Card>
@@ -193,7 +227,7 @@ export default function DetailPengajuan() {
                         <TableCell className="text-right text-sm">{item.qty}</TableCell>
                         <TableCell className="text-right text-sm">{formatRupiah(item.unit_price)}</TableCell>
                         <TableCell className="text-right text-sm font-semibold">{formatRupiah(item.total)}</TableCell>
-                        <TableCell className="text-sm">{item.vessel_id ? vendors.find(v => v.id === item.vessel_id)?.name || '-' : '-'}</TableCell>
+                        <TableCell className="text-sm">{item.fleet ? `Fleet ${item.fleet}` : '-'}</TableCell>
                         <TableCell className="text-xs text-gray-500">{item.invoice_number || '-'}</TableCell>
                       </TableRow>
                     ))}
@@ -229,10 +263,9 @@ export default function DetailPengajuan() {
                           {att.label && <span className="text-blue-600 font-medium">📎 {att.label}</span>}
                           <span>{(att.file_size_bytes / 1024).toFixed(0)} KB</span>
                           <span>{formatDate(att.created_at)}</span>
-                          <span>oleh {getActorName(att.uploaded_by)}</span>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => alert('Download lampiran (butuh integrasi Supabase Storage)')}>
+                      <Button variant="ghost" size="sm">
                         <Download className="h-4 w-4 mr-1" /> Unduh
                       </Button>
                     </div>
@@ -245,7 +278,6 @@ export default function DetailPengajuan() {
 
         {/* Right: Timeline + Actions */}
         <div className="space-y-5">
-          {/* Action Buttons */}
           {(canSubmit || canReceive || canPay || canReject) && (
             <Card className="border-blue-200 bg-blue-50">
               <CardHeader className="pb-3">
@@ -285,7 +317,7 @@ export default function DetailPengajuan() {
               <div className="relative">
                 <div className="absolute left-3.5 top-0 bottom-0 w-px bg-gray-200" />
                 <div className="space-y-4">
-                  {logs.map((log, i) => (
+                  {logs.map((log) => (
                     <div key={log.id} className="relative flex gap-3 pl-8">
                       <div className="absolute left-0 top-0.5 w-7 h-7 rounded-full bg-blue-100 border-2 border-blue-500 flex items-center justify-center">
                         <div className="w-2 h-2 rounded-full bg-blue-500" />
@@ -295,17 +327,16 @@ export default function DetailPengajuan() {
                           {log.from_status ? `${log.from_status} → ${log.to_status}` : log.to_status}
                         </p>
                         {log.notes && <p className="text-xs text-red-600 mt-0.5">{log.notes}</p>}
-                        <p className="text-xs text-gray-400 mt-0.5">{getActorName(log.actor_id)} • {formatDateTime(log.created_at)}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{getActorName(log)} • {formatDateTime(log.created_at)}</p>
                       </div>
                     </div>
                   ))}
-                  {/* Current status */}
                   <div className="relative flex gap-3 pl-8">
                     <div className="absolute left-0 top-0.5 w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center">
                       <div className="w-2 h-2 rounded-full bg-white" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-blue-700">Status saat ini: <span className="uppercase">{currentForm.status}</span></p>
+                      <p className="text-sm font-semibold text-blue-700">Status saat ini: <span className="uppercase">{form.status}</span></p>
                     </div>
                   </div>
                 </div>
@@ -341,7 +372,6 @@ export default function DetailPengajuan() {
         onCancel={() => setActionModal(null)}
       />
 
-      {/* Reject Dialog with reason */}
       <Dialog open={actionModal === 'reject'} onClose={() => setActionModal(null)} className="max-w-md">
         <DialogClose onClose={() => setActionModal(null)} />
         <DialogHeader>

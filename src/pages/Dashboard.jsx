@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -11,9 +11,8 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select } from '../components/ui/select'
 import StatusBadge from '../components/StatusBadge'
-import {
-  paymentForms, vendors, companies, departments, businessUnits, paymentItems, chartData,
-} from '../data/mockData'
+import { useMasterData } from '../context/MasterDataContext'
+import { getPaymentForms, getAllPaymentItemTotals } from '../services/paymentService'
 import { formatRupiah } from '../lib/utils'
 import {
   FileText, Clock, CheckCircle, Banknote, TrendingUp, AlertTriangle,
@@ -21,7 +20,6 @@ import {
 } from 'lucide-react'
 
 const PIE_COLORS = ['#1d4ed8', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe']
-
 const EMPTY_FILTER = { business_unit_id: '', department_id: '', date_from: '', date_to: '', vendor_id: '' }
 
 function KpiCard({ title, value, subtitle, icon: Icon, color }) {
@@ -57,12 +55,28 @@ function getMonthLabel(date) {
   return date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 }
 
-const allItems = Object.values(paymentItems).flat()
-const getFormValue = (formId) => allItems.filter(i => i.form_id === formId).reduce((s, i) => s + i.total, 0)
-const getCompanyCode = (id) => companies.find(c => c.id === id)?.code || '-'
-const getDeptCode = (id) => departments.find(d => d.id === id)?.code || '-'
-
 export default function Dashboard() {
+  const { businessUnits, companies, departments, vendors } = useMasterData()
+  const [paymentForms, setPaymentForms] = useState([])
+  const [itemTotals, setItemTotals] = useState({})
+  const [loadingData, setLoadingData] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      setLoadingData(true)
+      try {
+        const [forms, totals] = await Promise.all([getPaymentForms(), getAllPaymentItemTotals()])
+        setPaymentForms(forms)
+        setItemTotals(totals)
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoadingData(false)
+      }
+    }
+    load()
+  }, [])
+
   const now = new Date()
   const todayStr = now.toISOString().slice(0, 10)
   const thisMonth = todayStr.slice(0, 7)
@@ -71,7 +85,10 @@ export default function Dashboard() {
   const setF = (key, val) => setFilter(f => ({ ...f, [key]: val }))
   const hasFilter = Object.values(filter).some(Boolean)
 
-  // Filtered forms — semua chart & KPI mengikuti ini
+  const getFormValue = (formId) => itemTotals[formId] || 0
+  const getCompanyCode = (id) => companies.find(c => c.id === id)?.code || '-'
+  const getDeptCode = (id) => departments.find(d => d.id === id)?.code || '-'
+
   const filteredForms = useMemo(() => {
     return paymentForms.filter(f => {
       if (filter.business_unit_id) {
@@ -84,10 +101,8 @@ export default function Dashboard() {
       if (filter.vendor_id && f.vendor_id !== filter.vendor_id) return false
       return true
     })
-  }, [filter])
+  }, [filter, paymentForms, companies])
 
-  // Jika ada filter tanggal, label & hitungan "Dibayar" ikuti range tsb.
-  // Jika tidak, default ke bulan berjalan.
   const hasDateFilter = !!(filter.date_from || filter.date_to)
 
   const paidPeriodLabel = useMemo(() => {
@@ -106,14 +121,13 @@ export default function Dashboard() {
     const pending    = filteredForms.filter(f => f.status === 'submitted')
     const received   = filteredForms.filter(f => f.status === 'received')
     const rejected   = filteredForms.filter(f => f.status === 'rejected')
-    // Jika ada date filter → semua paid dalam filteredForms; jika tidak → paid bulan ini saja
     const paid = hasDateFilter
       ? filteredForms.filter(f => f.status === 'paid')
       : filteredForms.filter(f => f.status === 'paid' && f.paid_at?.startsWith(thisMonth))
     const totalPending = [...pending, ...received].reduce((s, f) => s + getFormValue(f.id), 0)
     const totalPaid    = paid.reduce((s, f) => s + getFormValue(f.id), 0)
     return { todayCount: todayForms.length, pendingCount: pending.length, receivedCount: received.length, rejectedCount: rejected.length, paidCount: paid.length, totalPending, totalPaid }
-  }, [filteredForms, todayStr, thisMonth, hasDateFilter])
+  }, [filteredForms, todayStr, thisMonth, hasDateFilter, itemTotals])
 
   const deptChartData = useMemo(() => {
     const map = {}
@@ -124,7 +138,7 @@ export default function Dashboard() {
       map[dept.id].count++
     })
     return Object.values(map).sort((a, b) => b.count - a.count)
-  }, [filteredForms])
+  }, [filteredForms, departments])
 
   const companyChartData = useMemo(() => {
     const total = filteredForms.length || 1
@@ -140,7 +154,7 @@ export default function Dashboard() {
       value: Math.round((item.count / total) * 100),
       fill: PIE_COLORS[i % PIE_COLORS.length],
     }))
-  }, [filteredForms])
+  }, [filteredForms, companies])
 
   const topVendorsData = useMemo(() => {
     const map = {}
@@ -152,12 +166,33 @@ export default function Dashboard() {
       map[name].count++
     })
     return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 5)
-  }, [filteredForms])
+  }, [filteredForms, vendors, itemTotals])
 
-  const recentForms = [...filteredForms].reverse().slice(0, 6)
+  // Monthly trend dari data real (6 bulan terakhir)
+  const monthlyTrend = useMemo(() => {
+    const months = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = d.toISOString().slice(0, 7)
+      const label = d.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })
+      const value = paymentForms
+        .filter(f => f.status === 'paid' && f.paid_at?.startsWith(key))
+        .reduce((s, f) => s + getFormValue(f.id), 0)
+      months.push({ month: label, value })
+    }
+    return months
+  }, [paymentForms, itemTotals])
 
-  const getVendorName = (form) =>
-    form.vendor_name_raw || vendors.find(v => v.id === form.vendor_id)?.name || '-'
+  const recentForms = [...filteredForms].slice(0, 6)
+  const getVendorName = (form) => form.vendor_name_raw || vendors.find(v => v.id === form.vendor_id)?.name || '-'
+
+  if (loadingData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400">Memuat data dashboard...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -188,7 +223,6 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Bisnis Unit */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Bisnis Unit</Label>
               <Select value={filter.business_unit_id} onChange={e => setF('business_unit_id', e.target.value)}>
@@ -198,8 +232,6 @@ export default function Dashboard() {
                 ))}
               </Select>
             </div>
-
-            {/* Departemen */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Departemen</Label>
               <Select value={filter.department_id} onChange={e => setF('department_id', e.target.value)}>
@@ -209,8 +241,6 @@ export default function Dashboard() {
                 ))}
               </Select>
             </div>
-
-            {/* Vendor */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Vendor</Label>
               <Select value={filter.vendor_id} onChange={e => setF('vendor_id', e.target.value)}>
@@ -220,8 +250,6 @@ export default function Dashboard() {
                 ))}
               </Select>
             </div>
-
-            {/* Date Range */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Rentang Tanggal</Label>
               <div className="flex gap-2 items-center">
@@ -355,7 +383,7 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={chartData.monthlyTrend}>
+            <LineChart data={monthlyTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000000).toFixed(0)}jt`} />

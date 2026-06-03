@@ -6,7 +6,8 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Textarea } from '../components/ui/textarea'
 import { Select } from '../components/ui/select'
-import { companies, departments, vendors, vessels, budgetCodes, paymentForms } from '../data/mockData'
+import { useMasterData } from '../context/MasterDataContext'
+import { createPaymentForm } from '../services/paymentService'
 import { formatRupiah } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -57,13 +58,15 @@ const defaultItem = () => ({
 
 export default function BuatPengajuan() {
   const { currentUser } = useAuth()
+  const { companies, departments, vendors, vessels, budgetCodes } = useMasterData()
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
 
-  // Header state
+  const today = new Date().toISOString().slice(0, 10)
+
   const [header, setHeader] = useState({
     invoice_date: '',
-    submission_date: '2026-06-02',
+    submission_date: today,
     vendor_id: '',
     vendor_name_raw: '',
     useExistingVendor: true,
@@ -72,11 +75,8 @@ export default function BuatPengajuan() {
     pic_name: currentUser?.full_name || '',
   })
 
-  // Items state
   const [items, setItems] = useState([defaultItem()])
-
-  // Attachments state
-  const [attachments, setAttachments] = useState([])
+  const [attachmentFiles, setAttachmentFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
   const selectedCompany = companies.find(c => c.id === header.company_id)
@@ -89,10 +89,7 @@ export default function BuatPengajuan() {
     const d = new Date(header.submission_date)
     const yyyy = d.getFullYear()
     const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const prefix = `${company.code}-${yyyy}-${mm}-${dept.code}`
-    const count = paymentForms.filter(f => f.form_code.startsWith(prefix)).length
-    const seq = String(count + 1).padStart(3, '0')
-    return `${prefix}-${seq}`
+    return `${company.code}-${yyyy}-${mm}-${dept.code}-XXX`
   })()
 
   const updateItem = (id, field, value) => {
@@ -119,7 +116,7 @@ export default function BuatPengajuan() {
 
   const handleFileAdd = (e) => {
     const files = Array.from(e.target.files)
-    if (attachments.length + files.length > 10) {
+    if (attachmentFiles.length + files.length > 10) {
       alert('Maksimal 10 lampiran per form')
       return
     }
@@ -130,7 +127,7 @@ export default function BuatPengajuan() {
       }
       return true
     })
-    setAttachments(prev => [
+    setAttachmentFiles(prev => [
       ...prev,
       ...valid.map(f => ({ file: f, label: '', id: Date.now() + Math.random() }))
     ])
@@ -138,11 +135,49 @@ export default function BuatPengajuan() {
 
   const handleSubmit = async (action) => {
     setSubmitting(true)
-    await new Promise(r => setTimeout(r, 800))
-    const status = action === 'submit' ? 'submitted' : 'draft'
-    alert(`Form berhasil ${action === 'submit' ? 'diajukan ke Finance' : 'disimpan sebagai Draft'}!\n\nKode Form: ${generatedCode}\nStatus: ${status.toUpperCase()}\n\n(Data mock, belum tersimpan ke database)`)
-    navigate('/pengajuan')
-    setSubmitting(false)
+    try {
+      const status = action === 'submit' ? 'submitted' : 'draft'
+      const now = new Date().toISOString()
+
+      const formData = {
+        id: `pf_${Date.now()}`,
+        form_code: generatedCode.replace('XXX', String(Date.now()).slice(-3)),
+        form_number: 1,
+        invoice_date: header.invoice_date || null,
+        submission_date: header.submission_date,
+        vendor_id: header.useExistingVendor ? header.vendor_id : null,
+        vendor_name_raw: header.useExistingVendor ? null : header.vendor_name_raw,
+        company_id: header.company_id,
+        department_id: header.department_id,
+        pic_name: header.pic_name,
+        created_by: currentUser.id,
+        status,
+        submitted_to_finance_at: status === 'submitted' ? now : null,
+      }
+
+      const itemsData = items.map((item, i) => ({
+        id: `pi_${Date.now()}_${i}`,
+        item_code: `${formData.form_code}-${String(i + 1).padStart(3, '0')}`,
+        description: item.description,
+        qty: parseFloat(item.qty),
+        unit_price: parseFloat(item.unit_price),
+        total: getItemTotal(item),
+        vessel_id: item.vessel_id || null,
+        fleet: item.fleet || null,
+        budget_code_id: item.budget_code_id || null,
+        notes: item.notes || null,
+        invoice_number: item.invoice_number || null,
+      }))
+
+      await createPaymentForm(formData, itemsData)
+
+      alert(`Form berhasil ${action === 'submit' ? 'diajukan ke Finance' : 'disimpan sebagai Draft'}!\n\nKode Form: ${formData.form_code}`)
+      navigate('/pengajuan')
+    } catch (err) {
+      alert('Gagal menyimpan form: ' + err.message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const canNextStep1 = header.submission_date && header.company_id && header.department_id && header.pic_name &&
@@ -272,24 +307,13 @@ export default function BuatPengajuan() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="space-y-1.5">
                     <Label>Qty <span className="text-red-500">*</span></Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0"
-                      value={item.qty}
-                      onChange={e => updateItem(item.id, 'qty', e.target.value)}
-                    />
+                    <Input type="number" min="0" step="0.01" placeholder="0" value={item.qty}
+                      onChange={e => updateItem(item.id, 'qty', e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Harga Satuan (Rp) <span className="text-red-500">*</span></Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={item.unit_price}
-                      onChange={e => updateItem(item.id, 'unit_price', e.target.value)}
-                    />
+                    <Input type="number" min="0" placeholder="0" value={item.unit_price}
+                      onChange={e => updateItem(item.id, 'unit_price', e.target.value)} />
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
                     <Label>Total</Label>
@@ -321,26 +345,19 @@ export default function BuatPengajuan() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Nomor Invoice</Label>
-                    <Input
-                      placeholder="Nomor invoice dari vendor"
-                      value={item.invoice_number}
-                      onChange={e => updateItem(item.id, 'invoice_number', e.target.value)}
-                    />
+                    <Input placeholder="Nomor invoice dari vendor" value={item.invoice_number}
+                      onChange={e => updateItem(item.id, 'invoice_number', e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Keterangan</Label>
-                    <Input
-                      placeholder="Catatan tambahan (opsional)"
-                      value={item.notes}
-                      onChange={e => updateItem(item.id, 'notes', e.target.value)}
-                    />
+                    <Input placeholder="Catatan tambahan (opsional)" value={item.notes}
+                      onChange={e => updateItem(item.id, 'notes', e.target.value)} />
                   </div>
                 </div>
               </CardContent>
             </Card>
           ))}
 
-          {/* Grand Total */}
           <Card className="bg-blue-50 border-blue-200">
             <CardContent className="p-4 flex items-center justify-between">
               <span className="font-semibold text-gray-700">Total Keseluruhan ({items.length} item)</span>
@@ -348,11 +365,7 @@ export default function BuatPengajuan() {
             </CardContent>
           </Card>
 
-          <Button
-            variant="outline"
-            onClick={() => setItems(prev => [...prev, defaultItem()])}
-            className="w-full border-dashed"
-          >
+          <Button variant="outline" onClick={() => setItems(prev => [...prev, defaultItem()])} className="w-full border-dashed">
             <Plus className="h-4 w-4 mr-2" /> Tambah Item
           </Button>
 
@@ -375,7 +388,6 @@ export default function BuatPengajuan() {
             <p className="text-sm text-gray-500">Opsional • Maks 10 file • PDF, JPG, PNG • Maks 10MB per file</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Upload Area */}
             <label className="flex flex-col items-center justify-center border-2 border-dashed border-blue-300 rounded-xl p-8 cursor-pointer hover:bg-blue-50 transition-colors">
               <Upload className="h-8 w-8 text-blue-400 mb-2" />
               <span className="text-sm font-medium text-blue-700">Klik untuk pilih file atau seret ke sini</span>
@@ -383,8 +395,7 @@ export default function BuatPengajuan() {
               <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleFileAdd} />
             </label>
 
-            {/* File List */}
-            {attachments.map((att, idx) => (
+            {attachmentFiles.map((att, idx) => (
               <div key={att.id} className="flex items-center gap-3 p-3 rounded-lg border bg-gray-50">
                 <FileText className="h-5 w-5 text-blue-500 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -392,26 +403,22 @@ export default function BuatPengajuan() {
                   <p className="text-xs text-gray-400">{(att.file.size / 1024).toFixed(0)} KB</p>
                 </div>
                 <Input
-                  placeholder="Label (opsional, maks 100 karakter)"
+                  placeholder="Label (opsional)"
                   value={att.label}
                   maxLength={100}
-                  onChange={e => setAttachments(prev => prev.map((a, i) => i === idx ? { ...a, label: e.target.value } : a))}
+                  onChange={e => setAttachmentFiles(prev => prev.map((a, i) => i === idx ? { ...a, label: e.target.value } : a))}
                   className="max-w-[200px] h-8 text-xs"
                 />
-                <button
-                  onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
-                  className="text-red-400 hover:text-red-600"
-                >
+                <button onClick={() => setAttachmentFiles(prev => prev.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ))}
 
-            {attachments.length === 0 && (
+            {attachmentFiles.length === 0 && (
               <p className="text-center text-sm text-gray-400 py-4">Belum ada lampiran. Form dapat disubmit tanpa lampiran.</p>
             )}
 
-            {/* Summary */}
             <div className="rounded-lg bg-gray-50 border p-4 space-y-2">
               <p className="text-sm font-semibold text-gray-700">Ringkasan Pengajuan</p>
               <div className="grid grid-cols-2 gap-x-4 text-sm text-gray-600">
@@ -426,7 +433,7 @@ export default function BuatPengajuan() {
                 <span>Total Nilai:</span>
                 <span className="font-semibold text-green-700">{formatRupiah(grandTotal)}</span>
                 <span>Lampiran:</span>
-                <span>{attachments.length} file</span>
+                <span>{attachmentFiles.length} file</span>
               </div>
             </div>
 

@@ -5,7 +5,8 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { useAuth } from '../context/AuthContext'
-import { departments, companies } from '../data/mockData'
+import { useMasterData } from '../context/MasterDataContext'
+import { supabase } from '../lib/supabase'
 import { User, KeyRound, LogOut, CheckCircle } from 'lucide-react'
 
 const roleLabels = { admin: 'Admin Sistem', staff: 'Staff / Pengaju', finance: 'Finance', viewer: 'Viewer' }
@@ -13,29 +14,38 @@ const roleColors = { admin: 'bg-purple-100 text-purple-700', staff: 'bg-blue-100
 
 export default function Profil() {
   const { currentUser, logout } = useAuth()
+  const { departments, companies } = useMasterData()
   const navigate = useNavigate()
-  const [oldPass, setOldPass] = useState('')
   const [newPass, setNewPass] = useState('')
   const [confirmPass, setConfirmPass] = useState('')
   const [success, setSuccess] = useState(false)
+  const [changing, setChanging] = useState(false)
 
   const dept = departments.find(d => d.id === currentUser?.department_id)
   const company = companies.find(c => c.id === currentUser?.company_id)
 
-  const handleChangePass = (e) => {
+  const handleChangePass = async (e) => {
     e.preventDefault()
     if (newPass !== confirmPass) return alert('Password baru tidak cocok')
     if (newPass.length < 6) return alert('Password minimal 6 karakter')
-    setSuccess(true)
-    setOldPass(''); setNewPass(''); setConfirmPass('')
-    setTimeout(() => setSuccess(false), 3000)
+    setChanging(true)
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPass })
+      if (error) throw error
+      setSuccess(true)
+      setNewPass(''); setConfirmPass('')
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (err) {
+      alert('Gagal mengubah password: ' + err.message)
+    } finally {
+      setChanging(false)
+    }
   }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Profil Saya</h1>
 
-      {/* Profile Info */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -85,7 +95,6 @@ export default function Profil() {
         </CardContent>
       </Card>
 
-      {/* Change Password */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -100,10 +109,6 @@ export default function Profil() {
           )}
           <form onSubmit={handleChangePass} className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Password Lama</Label>
-              <Input type="password" value={oldPass} onChange={e => setOldPass(e.target.value)} placeholder="Masukkan password lama" required />
-            </div>
-            <div className="space-y-1.5">
               <Label>Password Baru</Label>
               <Input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="Minimal 6 karakter" required />
             </div>
@@ -111,12 +116,13 @@ export default function Profil() {
               <Label>Konfirmasi Password Baru</Label>
               <Input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} placeholder="Ulangi password baru" required />
             </div>
-            <Button type="submit">Simpan Password Baru</Button>
+            <Button type="submit" disabled={changing}>
+              {changing ? 'Menyimpan...' : 'Simpan Password Baru'}
+            </Button>
           </form>
         </CardContent>
       </Card>
 
-      {/* Logout */}
       <Card className="border-red-100">
         <CardContent className="p-4 flex items-center justify-between">
           <div>

@@ -23,19 +23,11 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const demoAccounts = [
-    { label: "Admin", email: "admin@bgp.co.id", password: "admin123" },
-    { label: "Staff", email: "staff@bgp.co.id", password: "staff123" },
-    { label: "Finance", email: "finance@bgp.co.id", password: "finance123" },
-    { label: "Viewer", email: "viewer@bgp.co.id", password: "viewer123" },
-  ];
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
-    const result = login(email, password);
+    const result = await login(email, password);
     if (result.success) {
       navigate("/");
     } else {
@@ -50,13 +42,16 @@ export default function Login() {
         {/* Logo / Title */}
         <div className="text-center">
           <div className="inline-flex items-center justify-center mb-4">
-            <img src={logoBpg} alt="Logo BPG" className="h-20 w-auto drop-shadow-lg" />
+            <img
+              src={logoBpg}
+              alt="Logo BPG"
+              className="w-auto h-20 drop-shadow-lg"
+            />
           </div>
           <h1 className="text-3xl font-bold text-white">Monitoring Payment</h1>
           <p className="mt-1 text-blue-200">
             Sistem Pengajuan Pembayaran Digital
           </p>
-          <p className="text-blue-300 text-xs mt-0.5">Barokah Perkasa Group</p>
         </div>
 
         <Card className="border-0 shadow-2xl">
@@ -114,31 +109,6 @@ export default function Login() {
                 {loading ? "Memproses..." : "Masuk"}
               </Button>
             </form>
-
-            {/* Demo Accounts */}
-            <div className="mt-6">
-              <p className="mb-3 text-xs text-center text-gray-400">
-                — Akun Demo —
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {demoAccounts.map((acc) => (
-                  <button
-                    key={acc.label}
-                    onClick={() => {
-                      setEmail(acc.email);
-                      setPassword(acc.password);
-                    }}
-                    className="px-3 py-2 text-xs text-left transition-colors border rounded-lg hover:bg-blue-50 hover:border-blue-300"
-                  >
-                    <span className="font-semibold text-blue-700">
-                      {acc.label}
-                    </span>
-                    <br />
-                    <span className="text-gray-500">{acc.email}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
           </CardContent>
         </Card>
 

@@ -7,16 +7,18 @@ import { Select } from '../../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../../components/ui/dialog'
 import { AlertDialog } from '../../components/ui/alert-dialog'
-import { companies as initCompanies, businessUnits } from '../../data/mockData'
+import { useMasterData } from '../../context/MasterDataContext'
+import { upsertCompany, deleteCompany } from '../../services/masterService'
 import { Plus, Pencil, Trash2, Search } from 'lucide-react'
 
 export default function MasterPerusahaan() {
-  const [companies, setCompanies] = useState(initCompanies)
+  const { companies, businessUnits, reload } = useMasterData()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '', code: '', business_unit_id: '', is_active: true })
   const [editId, setEditId] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   const filtered = companies.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -24,25 +26,33 @@ export default function MasterPerusahaan() {
   )
 
   const getUnit = (id) => businessUnits.find(u => u.id === id)
-
   const openAdd = () => { setForm({ name: '', code: '', business_unit_id: '', is_active: true }); setEditId(null); setModal('form') }
   const openEdit = (c) => { setForm({ name: c.name, code: c.code, business_unit_id: c.business_unit_id || '', is_active: c.is_active }); setEditId(c.id); setModal('form') }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) return alert('Nama perusahaan wajib diisi')
     if (!form.code.trim()) return alert('Kode perusahaan wajib diisi')
     if (!form.business_unit_id) return alert('Bisnis unit wajib dipilih')
-    if (editId) {
-      setCompanies(prev => prev.map(c => c.id === editId ? { ...c, ...form } : c))
-    } else {
-      setCompanies(prev => [...prev, { id: `c${Date.now()}`, ...form }])
+    setSaving(true)
+    try {
+      await upsertCompany(editId ? { id: editId, ...form } : { id: `c${Date.now()}`, ...form })
+      await reload()
+      setModal(null)
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
     }
-    setModal(null)
   }
 
-  const handleDelete = () => {
-    setCompanies(prev => prev.filter(c => c.id !== deleteId))
-    setDeleteId(null)
+  const handleDelete = async () => {
+    try {
+      await deleteCompany(deleteId)
+      await reload()
+      setDeleteId(null)
+    } catch (err) {
+      alert('Gagal hapus: ' + err.message)
+    }
   }
 
   return (
@@ -134,19 +144,13 @@ export default function MasterPerusahaan() {
             <Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="Contoh: BGP" maxLength={10} />
           </div>
           <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={form.is_active}
-              onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
-              className="w-4 h-4 accent-blue-600"
-            />
+            <input type="checkbox" id="is_active" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} className="w-4 h-4 accent-blue-600" />
             <Label htmlFor="is_active" className="cursor-pointer">Perusahaan Aktif</Label>
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
-          <Button onClick={handleSave}>{editId ? 'Simpan' : 'Tambah'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : editId ? 'Simpan' : 'Tambah'}</Button>
         </DialogFooter>
       </Dialog>
 

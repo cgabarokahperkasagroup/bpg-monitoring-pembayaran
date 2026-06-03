@@ -7,18 +7,20 @@ import { Select } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../components/ui/dialog'
 import { Badge } from '../components/ui/badge'
-import { users as initUsers, departments, companies } from '../data/mockData'
+import { useMasterData } from '../context/MasterDataContext'
+import { updateUserProfile, toggleUserActive } from '../services/userService'
 import { Plus, Power, Search, UserCog } from 'lucide-react'
 
 const roleLabels = { admin: 'Admin', staff: 'Staff', finance: 'Finance', viewer: 'Viewer' }
 const roleColors = { admin: 'bg-purple-100 text-purple-700', staff: 'bg-blue-100 text-blue-700', finance: 'bg-green-100 text-green-700', viewer: 'bg-gray-100 text-gray-700' }
 
 export default function ManajemenUser() {
-  const [users, setUsers] = useState(initUsers)
+  const { users, departments, companies, reload } = useMasterData()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
-  const [form, setForm] = useState({ full_name: '', email: '', role: 'staff', department_id: '', company_id: '', is_active: true })
+  const [form, setForm] = useState({ full_name: '', email: '', role: 'staff', department_id: '', company_id: '' })
   const [editId, setEditId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   const filtered = users.filter(u =>
     u.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -26,29 +28,47 @@ export default function ManajemenUser() {
   )
 
   const openAdd = () => {
-    setForm({ full_name: '', email: '', role: 'staff', department_id: '', company_id: '', is_active: true })
+    setForm({ full_name: '', email: '', role: 'staff', department_id: '', company_id: '' })
     setEditId(null)
     setModal('form')
   }
 
   const openEdit = (u) => {
-    setForm({ full_name: u.full_name, email: u.email, role: u.role, department_id: u.department_id || '', company_id: u.company_id || '', is_active: u.is_active })
+    setForm({ full_name: u.full_name, email: u.email, role: u.role, department_id: u.department_id || '', company_id: u.company_id || '' })
     setEditId(u.id)
     setModal('form')
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.full_name || !form.email) return alert('Nama dan email wajib diisi')
-    if (editId) {
-      setUsers(prev => prev.map(u => u.id === editId ? { ...u, ...form } : u))
-    } else {
-      setUsers(prev => [...prev, { id: `u${Date.now()}`, ...form }])
+    setSaving(true)
+    try {
+      if (editId) {
+        await updateUserProfile(editId, {
+          full_name: form.full_name,
+          role: form.role,
+          department_id: form.department_id || null,
+          company_id: form.company_id || null,
+        })
+        await reload()
+        setModal(null)
+      } else {
+        alert('Untuk menambah user baru, gunakan fitur undangan email Supabase Auth. Hubungi Admin Sistem.')
+      }
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
     }
-    setModal(null)
   }
 
-  const toggleActive = (id) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, is_active: !u.is_active } : u))
+  const handleToggleActive = async (u) => {
+    try {
+      await toggleUserActive(u.id, !u.is_active)
+      await reload()
+    } catch (err) {
+      alert('Gagal: ' + err.message)
+    }
   }
 
   const getDeptName = (id) => departments.find(d => d.id === id)?.name || '—'
@@ -110,7 +130,7 @@ export default function ManajemenUser() {
                       variant="ghost"
                       size="icon"
                       className={`h-8 w-8 ${u.is_active ? 'text-red-500 hover:text-red-700' : 'text-green-500 hover:text-green-700'}`}
-                      onClick={() => toggleActive(u.id)}
+                      onClick={() => handleToggleActive(u)}
                       title={u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                     >
                       <Power className="h-4 w-4" />
@@ -123,12 +143,11 @@ export default function ManajemenUser() {
         </Table>
       </Card>
 
-      {/* Form Modal */}
       <Dialog open={modal === 'form'} onClose={() => setModal(null)} className="max-w-lg">
         <DialogClose onClose={() => setModal(null)} />
         <DialogHeader>
           <DialogTitle>{editId ? 'Edit Akun User' : 'Tambah Akun User Baru'}</DialogTitle>
-          {!editId && <p className="text-sm text-gray-500 mt-1">Password awal: password123 (user wajib ganti saat pertama login)</p>}
+          {!editId && <p className="text-sm text-gray-500 mt-1">User baru dibuat melalui undangan email oleh Admin Supabase.</p>}
         </DialogHeader>
         <div className="space-y-3 mt-2">
           <div className="grid grid-cols-2 gap-3">
@@ -169,7 +188,9 @@ export default function ManajemenUser() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
-          <Button onClick={handleSave}>{editId ? 'Simpan Perubahan' : 'Buat Akun'}</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? 'Menyimpan...' : editId ? 'Simpan Perubahan' : 'Buat Akun'}
+          </Button>
         </DialogFooter>
       </Dialog>
     </div>

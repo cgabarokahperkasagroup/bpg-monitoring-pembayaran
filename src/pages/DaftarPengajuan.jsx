@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -6,7 +6,8 @@ import { Input } from '../components/ui/input'
 import { Select } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import StatusBadge from '../components/StatusBadge'
-import { paymentForms, vendors, companies, departments, paymentItems } from '../data/mockData'
+import { useMasterData } from '../context/MasterDataContext'
+import { getPaymentForms, getAllPaymentItemTotals } from '../services/paymentService'
 import { formatRupiah, formatDate } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -14,14 +15,14 @@ import {
   Filter, FileDown,
 } from 'lucide-react'
 
-function getFormTotal(formId) {
-  const items = Object.values(paymentItems).flat().filter(i => i.form_id === formId)
-  return items.reduce((s, i) => s + i.total, 0)
-}
-
 export default function DaftarPengajuan() {
   const { currentUser } = useAuth()
+  const { vendors, companies, departments } = useMasterData()
   const navigate = useNavigate()
+
+  const [paymentForms, setPaymentForms] = useState([])
+  const [itemTotals, setItemTotals] = useState({})
+  const [loading, setLoading] = useState(true)
 
   const [search, setSearch] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
@@ -30,6 +31,22 @@ export default function DaftarPengajuan() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const [forms, totals] = await Promise.all([getPaymentForms(), getAllPaymentItemTotals()])
+        setPaymentForms(forms)
+        setItemTotals(totals)
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
 
   const getVendorName = (form) => {
     if (form.vendor_name_raw) return form.vendor_name_raw
@@ -48,7 +65,7 @@ export default function DaftarPengajuan() {
       if (filterDateTo && f.submission_date > filterDateTo) return false
       return true
     })
-  }, [search, filterCompany, filterStatus, filterDateFrom, filterDateTo])
+  }, [search, filterCompany, filterStatus, filterDateFrom, filterDateTo, paymentForms, vendors])
 
   const totalPages = Math.ceil(filtered.length / pageSize)
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
@@ -62,6 +79,14 @@ export default function DaftarPengajuan() {
     { value: 'paid', label: 'Dibayar' },
     { value: 'rejected', label: 'Dikembalikan' },
   ]
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400">Memuat data pengajuan...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -143,10 +168,10 @@ export default function DaftarPengajuan() {
             </Select>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => alert('Export Excel (akan diimplementasikan saat integrasi database)')}>
+            <Button variant="outline" size="sm">
               <FileDown className="h-4 w-4 mr-1" /> Excel
             </Button>
-            <Button variant="outline" size="sm" onClick={() => alert('Export CSV (akan diimplementasikan saat integrasi database)')}>
+            <Button variant="outline" size="sm">
               <Download className="h-4 w-4 mr-1" /> CSV
             </Button>
           </div>
@@ -176,7 +201,7 @@ export default function DaftarPengajuan() {
             ) : paginated.map(form => {
               const company = companies.find(c => c.id === form.company_id)
               const dept = departments.find(d => d.id === form.department_id)
-              const total = getFormTotal(form.id)
+              const total = itemTotals[form.id] || 0
               const canEdit = (currentUser?.role === 'staff' && ['draft', 'rejected'].includes(form.status) && form.created_by === currentUser?.id)
                 || currentUser?.role === 'admin'
 
@@ -224,7 +249,6 @@ export default function DaftarPengajuan() {
           </TableBody>
         </Table>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t">
             <p className="text-sm text-gray-500">

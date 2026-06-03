@@ -6,33 +6,47 @@ import { Label } from '../../components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../../components/ui/dialog'
 import { AlertDialog } from '../../components/ui/alert-dialog'
-import { departments as initDepts } from '../../data/mockData'
+import { useMasterData } from '../../context/MasterDataContext'
+import { upsertDepartment, deleteDepartment } from '../../services/masterService'
 import { Plus, Pencil, Trash2, Search } from 'lucide-react'
 
 export default function MasterDepartemen() {
-  const [depts, setDepts] = useState(initDepts)
+  const { departments, reload } = useMasterData()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '', code: '' })
   const [editId, setEditId] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
-  const filtered = depts.filter(d => d.name.toLowerCase().includes(search.toLowerCase()))
+  const filtered = departments.filter(d => d.name.toLowerCase().includes(search.toLowerCase()))
 
   const openAdd = () => { setForm({ name: '', code: '' }); setEditId(null); setModal('form') }
   const openEdit = (d) => { setForm({ name: d.name, code: d.code }); setEditId(d.id); setModal('form') }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) return alert('Nama departemen wajib diisi')
     if (!form.code.trim()) return alert('Kode departemen wajib diisi')
-    if (editId) setDepts(prev => prev.map(d => d.id === editId ? { ...d, ...form } : d))
-    else setDepts(prev => [...prev, { id: `d${Date.now()}`, ...form }])
-    setModal(null)
+    setSaving(true)
+    try {
+      await upsertDepartment(editId ? { id: editId, ...form } : { id: `d${Date.now()}`, ...form })
+      await reload()
+      setModal(null)
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const handleDelete = () => {
-    setDepts(prev => prev.filter(d => d.id !== deleteId))
-    setDeleteId(null)
+  const handleDelete = async () => {
+    try {
+      await deleteDepartment(deleteId)
+      await reload()
+      setDeleteId(null)
+    } catch (err) {
+      alert('Gagal hapus: ' + err.message)
+    }
   }
 
   return (
@@ -40,7 +54,7 @@ export default function MasterDepartemen() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Master Departemen</h1>
-          <p className="text-sm text-gray-500">{depts.length} departemen</p>
+          <p className="text-sm text-gray-500">{departments.length} departemen</p>
         </div>
         <Button onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Tambah Departemen</Button>
       </div>
@@ -92,7 +106,7 @@ export default function MasterDepartemen() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
-          <Button onClick={handleSave}>{editId ? 'Simpan' : 'Tambah'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : editId ? 'Simpan' : 'Tambah'}</Button>
         </DialogFooter>
       </Dialog>
       <AlertDialog open={!!deleteId} title="Hapus Departemen?" description="Departemen ini akan dihapus dari sistem." confirmLabel="Hapus" confirmVariant="destructive" onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />

@@ -6,18 +6,20 @@ import { Label } from '../../components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../../components/ui/dialog'
 import { AlertDialog } from '../../components/ui/alert-dialog'
-import { businessUnits as initUnits } from '../../data/mockData'
+import { useMasterData } from '../../context/MasterDataContext'
+import { upsertBusinessUnit, deleteBusinessUnit } from '../../services/masterService'
 import { Plus, Pencil, Trash2, Search } from 'lucide-react'
 
 export default function MasterBisnisUnit() {
-  const [units, setUnits] = useState(initUnits)
+  const { businessUnits, reload } = useMasterData()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '', code: '', is_active: true })
   const [editId, setEditId] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
-  const filtered = units.filter(u =>
+  const filtered = businessUnits.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
     u.code.toLowerCase().includes(search.toLowerCase())
   )
@@ -25,20 +27,29 @@ export default function MasterBisnisUnit() {
   const openAdd = () => { setForm({ name: '', code: '', is_active: true }); setEditId(null); setModal('form') }
   const openEdit = (u) => { setForm({ name: u.name, code: u.code, is_active: u.is_active }); setEditId(u.id); setModal('form') }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) return alert('Nama bisnis unit wajib diisi')
     if (!form.code.trim()) return alert('Kode bisnis unit wajib diisi')
-    if (editId) {
-      setUnits(prev => prev.map(u => u.id === editId ? { ...u, ...form } : u))
-    } else {
-      setUnits(prev => [...prev, { id: `bu${Date.now()}`, ...form }])
+    setSaving(true)
+    try {
+      await upsertBusinessUnit(editId ? { id: editId, ...form } : { id: `bu${Date.now()}`, ...form })
+      await reload()
+      setModal(null)
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
     }
-    setModal(null)
   }
 
-  const handleDelete = () => {
-    setUnits(prev => prev.filter(u => u.id !== deleteId))
-    setDeleteId(null)
+  const handleDelete = async () => {
+    try {
+      await deleteBusinessUnit(deleteId)
+      await reload()
+      setDeleteId(null)
+    } catch (err) {
+      alert('Gagal hapus: ' + err.message)
+    }
   }
 
   return (
@@ -46,7 +57,7 @@ export default function MasterBisnisUnit() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Master Bisnis Unit</h1>
-          <p className="text-sm text-gray-500">{units.length} bisnis unit</p>
+          <p className="text-sm text-gray-500">{businessUnits.length} bisnis unit</p>
         </div>
         <Button onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Tambah Bisnis Unit</Button>
       </div>
@@ -110,19 +121,13 @@ export default function MasterBisnisUnit() {
             <Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="Contoh: SHP" maxLength={6} />
           </div>
           <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="bu_is_active"
-              checked={form.is_active}
-              onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
-              className="w-4 h-4 accent-blue-600"
-            />
+            <input type="checkbox" id="bu_is_active" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} className="w-4 h-4 accent-blue-600" />
             <Label htmlFor="bu_is_active" className="cursor-pointer">Bisnis Unit Aktif</Label>
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
-          <Button onClick={handleSave}>{editId ? 'Simpan' : 'Tambah'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : editId ? 'Simpan' : 'Tambah'}</Button>
         </DialogFooter>
       </Dialog>
 

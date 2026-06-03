@@ -6,26 +6,46 @@ import { Label } from '../../components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../../components/ui/dialog'
 import { AlertDialog } from '../../components/ui/alert-dialog'
-import { vendors as initVendors } from '../../data/mockData'
-import { formatDate } from '../../lib/utils'
+import { useMasterData } from '../../context/MasterDataContext'
+import { upsertVendor, deleteVendor } from '../../services/masterService'
 import { Plus, Pencil, Trash2, Search } from 'lucide-react'
 
 export default function MasterVendor() {
-  const [vends, setVends] = useState(initVendors)
+  const { vendors, reload } = useMasterData()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '' })
   const [editId, setEditId] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
-  const filtered = vends.filter(v => v.name.toLowerCase().includes(search.toLowerCase()))
+  const filtered = vendors.filter(v => v.name.toLowerCase().includes(search.toLowerCase()))
+
   const openAdd = () => { setForm({ name: '' }); setEditId(null); setModal('form') }
   const openEdit = (v) => { setForm({ name: v.name }); setEditId(v.id); setModal('form') }
-  const handleSave = () => {
+
+  const handleSave = async () => {
     if (!form.name.trim()) return alert('Nama vendor wajib diisi')
-    if (editId) setVends(prev => prev.map(v => v.id === editId ? { ...v, ...form } : v))
-    else setVends(prev => [...prev, { id: `ve${Date.now()}`, ...form, created_at: new Date().toISOString() }])
-    setModal(null)
+    setSaving(true)
+    try {
+      await upsertVendor(editId ? { id: editId, ...form } : { id: `ve${Date.now()}`, ...form })
+      await reload()
+      setModal(null)
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await deleteVendor(deleteId)
+      await reload()
+      setDeleteId(null)
+    } catch (err) {
+      alert('Gagal hapus: ' + err.message)
+    }
   }
 
   return (
@@ -33,7 +53,7 @@ export default function MasterVendor() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Master Vendor</h1>
-          <p className="text-sm text-gray-500">{vends.length} vendor terdaftar</p>
+          <p className="text-sm text-gray-500">{vendors.length} vendor terdaftar</p>
         </div>
         <Button onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Tambah Vendor</Button>
       </div>
@@ -75,10 +95,10 @@ export default function MasterVendor() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
-          <Button onClick={handleSave}>{editId ? 'Simpan' : 'Tambah'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : editId ? 'Simpan' : 'Tambah'}</Button>
         </DialogFooter>
       </Dialog>
-      <AlertDialog open={!!deleteId} title="Hapus Vendor?" description="Vendor ini akan dihapus." confirmLabel="Hapus" confirmVariant="destructive" onConfirm={() => { setVends(prev => prev.filter(v => v.id !== deleteId)); setDeleteId(null) }} onCancel={() => setDeleteId(null)} />
+      <AlertDialog open={!!deleteId} title="Hapus Vendor?" description="Vendor ini akan dihapus." confirmLabel="Hapus" confirmVariant="destructive" onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
     </div>
   )
 }

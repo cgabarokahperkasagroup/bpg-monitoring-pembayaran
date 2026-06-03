@@ -7,29 +7,49 @@ import { Textarea } from '../../components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
 import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../../components/ui/dialog'
 import { AlertDialog } from '../../components/ui/alert-dialog'
-import { budgetCodes as initCodes } from '../../data/mockData'
+import { useMasterData } from '../../context/MasterDataContext'
+import { upsertBudgetCode, deleteBudgetCode } from '../../services/masterService'
 import { Plus, Pencil, Trash2, Search } from 'lucide-react'
 
 export default function MasterBudget() {
-  const [codes, setCodes] = useState(initCodes)
+  const { budgetCodes, reload } = useMasterData()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ code: '', description: '' })
   const [editId, setEditId] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
+  const [saving, setSaving] = useState(false)
 
-  const filtered = codes.filter(c =>
+  const filtered = budgetCodes.filter(c =>
     c.code.toLowerCase().includes(search.toLowerCase()) ||
     (c.description || '').toLowerCase().includes(search.toLowerCase())
   )
 
   const openAdd = () => { setForm({ code: '', description: '' }); setEditId(null); setModal('form') }
   const openEdit = (c) => { setForm({ code: c.code, description: c.description || '' }); setEditId(c.id); setModal('form') }
-  const handleSave = () => {
+
+  const handleSave = async () => {
     if (!form.code.trim()) return alert('Kode budget wajib diisi')
-    if (editId) setCodes(prev => prev.map(c => c.id === editId ? { ...c, ...form } : c))
-    else setCodes(prev => [...prev, { id: `bc${Date.now()}`, ...form }])
-    setModal(null)
+    setSaving(true)
+    try {
+      await upsertBudgetCode(editId ? { id: editId, ...form } : { id: `bc${Date.now()}`, ...form })
+      await reload()
+      setModal(null)
+    } catch (err) {
+      alert('Gagal menyimpan: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await deleteBudgetCode(deleteId)
+      await reload()
+      setDeleteId(null)
+    } catch (err) {
+      alert('Gagal hapus: ' + err.message)
+    }
   }
 
   return (
@@ -37,7 +57,7 @@ export default function MasterBudget() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Master Kode Budget</h1>
-          <p className="text-sm text-gray-500">{codes.length} kode budget</p>
+          <p className="text-sm text-gray-500">{budgetCodes.length} kode budget</p>
         </div>
         <Button onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Tambah Kode Budget</Button>
       </div>
@@ -85,10 +105,10 @@ export default function MasterBudget() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
-          <Button onClick={handleSave}>{editId ? 'Simpan' : 'Tambah'}</Button>
+          <Button onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : editId ? 'Simpan' : 'Tambah'}</Button>
         </DialogFooter>
       </Dialog>
-      <AlertDialog open={!!deleteId} title="Hapus Kode Budget?" description="Kode budget ini akan dihapus." confirmLabel="Hapus" confirmVariant="destructive" onConfirm={() => { setCodes(prev => prev.filter(c => c.id !== deleteId)); setDeleteId(null) }} onCancel={() => setDeleteId(null)} />
+      <AlertDialog open={!!deleteId} title="Hapus Kode Budget?" description="Kode budget ini akan dihapus." confirmLabel="Hapus" confirmVariant="destructive" onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
     </div>
   )
 }

@@ -1,46 +1,58 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '../components/ui/table'
-import { paymentForms, paymentItems, companies, departments, businessUnits, vendors } from '../data/mockData'
-import { formatRupiah, formatDate } from '../lib/utils'
+import { useMasterData } from '../context/MasterDataContext'
+import { getPaymentForms, getAllPaymentItemTotals } from '../services/paymentService'
+import { formatRupiah } from '../lib/utils'
 import { BarChart2, Download, FileDown, Filter, X, Layers } from 'lucide-react'
 
 const EMPTY_FILTER = {
-  business_unit_id: '',
-  company_id: '',
-  department_id: '',
-  vendor_id: '',
-  status: '',
-  date_from: '',
-  date_to: '',
+  business_unit_id: '', company_id: '', department_id: '',
+  vendor_id: '', status: '', date_from: '', date_to: '',
 }
 
 const STATUS_LABELS = {
-  draft: 'Draft',
-  submitted: 'Diajukan',
-  received: 'Diterima Finance',
-  paid: 'Dibayar',
-  rejected: 'Dikembalikan',
+  draft: 'Draft', submitted: 'Diajukan', received: 'Diterima Finance',
+  paid: 'Dibayar', rejected: 'Dikembalikan',
 }
 
-const allItems = Object.values(paymentItems).flat()
-const getFormTotal = (formId) => allItems.filter(i => i.form_id === formId).reduce((s, i) => s + i.total, 0)
-
 export default function Laporan() {
+  const { businessUnits, companies, departments, vendors } = useMasterData()
+  const [paymentForms, setPaymentForms] = useState([])
+  const [itemTotals, setItemTotals] = useState({})
+  const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState(EMPTY_FILTER)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const [forms, totals] = await Promise.all([getPaymentForms(), getAllPaymentItemTotals()])
+        setPaymentForms(forms)
+        setItemTotals(totals)
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
+
   const setF = (key, val) => setFilter(f => ({ ...f, [key]: val, ...(key === 'business_unit_id' ? { company_id: '' } : {}) }))
   const hasFilter = Object.values(filter).some(Boolean)
 
-  // Perusahaan yang muncul di dropdown mengikuti BU yang dipilih
+  const getFormTotal = (formId) => itemTotals[formId] || 0
+
   const filteredCompanies = useMemo(() =>
     filter.business_unit_id
       ? companies.filter(c => c.business_unit_id === filter.business_unit_id)
       : companies,
-    [filter.business_unit_id]
+    [filter.business_unit_id, companies]
   )
 
   const filtered = useMemo(() => {
@@ -57,12 +69,11 @@ export default function Laporan() {
       if (filter.date_to && f.submission_date > filter.date_to) return false
       return true
     })
-  }, [filter])
+  }, [filter, paymentForms, companies])
 
   const grandTotal = filtered.reduce((s, f) => s + getFormTotal(f.id), 0)
   const totalPaid  = filtered.filter(f => f.status === 'paid').reduce((s, f) => s + getFormTotal(f.id), 0)
 
-  // Rekap per Bisnis Unit
   const byBU = useMemo(() => {
     const map = {}
     filtered.forEach(f => {
@@ -76,9 +87,8 @@ export default function Laporan() {
       if (f.status === 'paid') map[key].paid += v
     })
     return Object.values(map).sort((a, b) => b.total - a.total)
-  }, [filtered])
+  }, [filtered, companies, businessUnits, itemTotals])
 
-  // Rekap per Departemen
   const byDept = useMemo(() => {
     const map = {}
     filtered.forEach(f => {
@@ -91,9 +101,8 @@ export default function Laporan() {
       if (f.status === 'paid') map[key].paid += v
     })
     return Object.values(map).sort((a, b) => b.total - a.total)
-  }, [filtered])
+  }, [filtered, departments, itemTotals])
 
-  // Rekap per Perusahaan
   const byCompany = useMemo(() => {
     const map = {}
     filtered.forEach(f => {
@@ -107,9 +116,8 @@ export default function Laporan() {
       if (f.status === 'paid') map[key].paid += v
     })
     return Object.values(map).sort((a, b) => b.total - a.total)
-  }, [filtered])
+  }, [filtered, companies, businessUnits, itemTotals])
 
-  // Rekap per Status
   const byStatus = useMemo(() => {
     const map = {}
     filtered.forEach(f => {
@@ -119,23 +127,26 @@ export default function Laporan() {
       map[s].count++
     })
     return Object.values(map)
-  }, [filtered])
+  }, [filtered, itemTotals])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400">Memuat data laporan...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Laporan & Export</h1>
           <p className="text-sm text-gray-500">Rekap pembayaran berdasarkan filter yang dipilih</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => alert('Export Excel (butuh integrasi database)')}>
-            <FileDown className="h-4 w-4 mr-1" /> Excel
-          </Button>
-          <Button variant="outline" onClick={() => alert('Export CSV (butuh integrasi database)')}>
-            <Download className="h-4 w-4 mr-1" /> CSV
-          </Button>
+          <Button variant="outline"><FileDown className="h-4 w-4 mr-1" /> Excel</Button>
+          <Button variant="outline"><Download className="h-4 w-4 mr-1" /> CSV</Button>
         </div>
       </div>
 
@@ -161,7 +172,6 @@ export default function Laporan() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Bisnis Unit */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Bisnis Unit</Label>
               <Select value={filter.business_unit_id} onChange={e => setF('business_unit_id', e.target.value)}>
@@ -171,8 +181,6 @@ export default function Laporan() {
                 ))}
               </Select>
             </div>
-
-            {/* Perusahaan — mengikuti BU */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Perusahaan</Label>
               <Select value={filter.company_id} onChange={e => setF('company_id', e.target.value)}>
@@ -182,8 +190,6 @@ export default function Laporan() {
                 ))}
               </Select>
             </div>
-
-            {/* Departemen */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Departemen</Label>
               <Select value={filter.department_id} onChange={e => setF('department_id', e.target.value)}>
@@ -193,8 +199,6 @@ export default function Laporan() {
                 ))}
               </Select>
             </div>
-
-            {/* Vendor */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Vendor</Label>
               <Select value={filter.vendor_id} onChange={e => setF('vendor_id', e.target.value)}>
@@ -204,8 +208,6 @@ export default function Laporan() {
                 ))}
               </Select>
             </div>
-
-            {/* Status */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Status</Label>
               <Select value={filter.status} onChange={e => setF('status', e.target.value)}>
@@ -215,8 +217,6 @@ export default function Laporan() {
                 ))}
               </Select>
             </div>
-
-            {/* Date Range */}
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Rentang Tanggal</Label>
               <div className="flex gap-2 items-center">
@@ -232,10 +232,10 @@ export default function Laporan() {
       {/* KPI Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Form',    value: filtered.length,                            unit: 'form', color: 'text-blue-700',  bg: 'bg-blue-50'  },
-          { label: 'Total Nilai',   value: formatRupiah(grandTotal),                   unit: null,   color: 'text-gray-900',  bg: 'bg-gray-50'  },
-          { label: 'Sudah Dibayar', value: filtered.filter(f => f.status === 'paid').length, unit: 'form', color: 'text-green-700', bg: 'bg-green-50' },
-          { label: 'Total Dibayar', value: formatRupiah(totalPaid),                    unit: null,   color: 'text-green-700', bg: 'bg-green-50' },
+          { label: 'Total Form',    value: filtered.length,                                      unit: 'form', color: 'text-blue-700',  bg: 'bg-blue-50'  },
+          { label: 'Total Nilai',   value: formatRupiah(grandTotal),                             unit: null,   color: 'text-gray-900',  bg: 'bg-gray-50'  },
+          { label: 'Sudah Dibayar', value: filtered.filter(f => f.status === 'paid').length,     unit: 'form', color: 'text-green-700', bg: 'bg-green-50' },
+          { label: 'Total Dibayar', value: formatRupiah(totalPaid),                              unit: null,   color: 'text-green-700', bg: 'bg-green-50' },
         ].map(item => (
           <Card key={item.label} className={item.bg}>
             <CardContent className="p-4">

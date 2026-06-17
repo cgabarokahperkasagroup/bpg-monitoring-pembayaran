@@ -7,7 +7,7 @@ import { Label } from '../components/ui/label'
 import { Textarea } from '../components/ui/textarea'
 import { Select } from '../components/ui/select'
 import { useMasterData } from '../context/MasterDataContext'
-import { createPaymentForm } from '../services/paymentService'
+import { createPaymentForm, updateFormStatus } from '../services/paymentService'
 import { formatRupiah } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -136,9 +136,8 @@ export default function BuatPengajuan() {
   const handleSubmit = async (action) => {
     setSubmitting(true)
     try {
-      const status = action === 'submit' ? 'submitted' : 'draft'
-      const now = new Date().toISOString()
-
+      // Selalu buat sebagai draft dulu agar item ter-insert saat form masih editable (RLS),
+      // baru ubah status ke 'submitted' bila diajukan (sekaligus mencatat audit log).
       const formData = {
         id: `pf_${Date.now()}`,
         form_code: generatedCode.replace('XXX', String(Date.now()).slice(-3)),
@@ -151,8 +150,8 @@ export default function BuatPengajuan() {
         department_id: header.department_id,
         pic_name: header.pic_name,
         created_by: currentUser.id,
-        status,
-        submitted_to_finance_at: status === 'submitted' ? now : null,
+        status: 'draft',
+        submitted_to_finance_at: null,
       }
 
       const itemsData = items.map((item, i) => ({
@@ -169,7 +168,10 @@ export default function BuatPengajuan() {
         invoice_number: item.invoice_number || null,
       }))
 
-      await createPaymentForm(formData, itemsData)
+      const form = await createPaymentForm(formData, itemsData)
+      if (action === 'submit') {
+        await updateFormStatus(form.id, 'submitted', currentUser.id)
+      }
 
       alert(`Form berhasil ${action === 'submit' ? 'diajukan ke Finance' : 'disimpan sebagai Draft'}!\n\nKode Form: ${formData.form_code}`)
       navigate('/pengajuan')

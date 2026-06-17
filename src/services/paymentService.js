@@ -67,6 +67,64 @@ export async function createPaymentForm(formData, items) {
   return form
 }
 
+// Impor massal pengajuan dari Excel. `forms` sudah ter-resolve (id master, items).
+// Semua dibuat dengan status 'submitted' (menunggu konfirmasi finance).
+// Mengembalikan ringkasan { success, failed, errors:[{label,message}] }.
+export async function importPaymentForms(forms, userId) {
+  const baseTs = Date.now()
+  const nowIso = new Date().toISOString()
+  const result = { success: 0, failed: 0, errors: [] }
+
+  for (let i = 0; i < forms.length; i++) {
+    const f = forms[i]
+    try {
+      const d = new Date(f.submission_date)
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const seq = `${String(baseTs).slice(-4)}${String(i).padStart(2, '0')}`
+      const form_code = `${f.company_code}-${yyyy}-${mm}-${f.dept_code}-${seq}`
+
+      const formData = {
+        id: `pf_${baseTs}_${i}`,
+        form_code,
+        form_number: 1,
+        invoice_date: f.invoice_date || null,
+        submission_date: f.submission_date,
+        vendor_id: f.vendor_id || null,
+        vendor_name_raw: f.vendor_name_raw || null,
+        company_id: f.company_id,
+        department_id: f.department_id,
+        pic_name: f.pic_name || null,
+        created_by: userId,
+        status: 'submitted',
+        submitted_to_finance_at: nowIso,
+      }
+
+      const itemsData = (f.items || []).map((it, j) => ({
+        id: `pi_${baseTs}_${i}_${j}`,
+        item_code: `${form_code}-${String(j + 1).padStart(3, '0')}`,
+        description: it.description,
+        qty: it.qty,
+        unit_price: it.unit_price,
+        total: it.total,
+        vessel_id: it.vessel_id || null,
+        fleet: it.fleet || null,
+        budget_code_id: it.budget_code_id || null,
+        notes: it.notes || null,
+        invoice_number: it.invoice_number || null,
+      }))
+
+      await createPaymentForm(formData, itemsData)
+      result.success++
+    } catch (err) {
+      result.failed++
+      result.errors.push({ label: f.label || `Pengajuan #${i + 1}`, message: err.message })
+    }
+  }
+
+  return result
+}
+
 export async function updatePaymentForm(id, formData, items) {
   const { data: form, error: formError } = await supabase
     .from('payment_forms')

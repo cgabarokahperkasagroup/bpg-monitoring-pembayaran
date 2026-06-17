@@ -6,6 +6,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Textarea } from '../components/ui/textarea'
 import { Select } from '../components/ui/select'
+import { SearchableSelect } from '../components/ui/searchable-select'
 import { useMasterData } from '../context/MasterDataContext'
 import { createPaymentForm, updateFormStatus } from '../services/paymentService'
 import { formatRupiah } from '../lib/utils'
@@ -79,7 +80,6 @@ export default function BuatPengajuan() {
   const [attachmentFiles, setAttachmentFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
-  const selectedCompany = companies.find(c => c.id === header.company_id)
   const filteredVessels = vessels.filter(v => v.company_id === header.company_id && v.is_active)
 
   const generatedCode = (() => {
@@ -235,10 +235,15 @@ export default function BuatPengajuan() {
                 >Ketik Manual</Button>
               </div>
               {header.useExistingVendor ? (
-                <Select value={header.vendor_id} onChange={e => setHeader(h => ({ ...h, vendor_id: e.target.value }))}>
-                  <option value="">-- Pilih Vendor --</option>
-                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </Select>
+                <SearchableSelect
+                  value={header.vendor_id}
+                  onChange={(val) => setHeader(h => ({ ...h, vendor_id: val }))}
+                  options={vendors.map(v => ({ value: v.id, label: v.name }))}
+                  placeholder="-- Pilih Vendor --"
+                  searchPlaceholder="Cari nama vendor..."
+                  clearable
+                  clearLabel="-- Pilih Vendor --"
+                />
               ) : (
                 <Input
                   placeholder="Ketik nama vendor baru..."
@@ -258,10 +263,15 @@ export default function BuatPengajuan() {
               </div>
               <div className="space-y-1.5">
                 <Label>Departemen <span className="text-red-500">*</span></Label>
-                <Select value={header.department_id} onChange={e => setHeader(h => ({ ...h, department_id: e.target.value }))}>
-                  <option value="">-- Pilih Departemen --</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </Select>
+                <SearchableSelect
+                  value={header.department_id}
+                  onChange={(val) => setHeader(h => ({ ...h, department_id: val }))}
+                  options={departments.map(d => ({ value: d.id, label: d.name }))}
+                  placeholder="-- Pilih Departemen --"
+                  searchPlaceholder="Cari departemen..."
+                  clearable
+                  clearLabel="-- Pilih Departemen --"
+                />
               </div>
             </div>
 
@@ -327,10 +337,16 @@ export default function BuatPengajuan() {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label>Kapal</Label>
-                    <Select value={item.vessel_id} onChange={e => updateItem(item.id, 'vessel_id', e.target.value)}>
-                      <option value="">-- Tidak ada --</option>
-                      {filteredVessels.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </Select>
+                    <SearchableSelect
+                      value={item.vessel_id || ''}
+                      onChange={(val) => updateItem(item.id, 'vessel_id', val)}
+                      options={filteredVessels.map(v => ({ value: v.id, label: v.name }))}
+                      placeholder="-- Pilih kapal --"
+                      searchPlaceholder="Cari nama kapal..."
+                      emptyText={header.company_id ? 'Kapal tidak ditemukan' : 'Pilih perusahaan dulu'}
+                      clearable
+                      clearLabel="-- Tidak ada --"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Fleet (auto)</Label>
@@ -338,10 +354,15 @@ export default function BuatPengajuan() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Kode Budget</Label>
-                    <Select value={item.budget_code_id} onChange={e => updateItem(item.id, 'budget_code_id', e.target.value)}>
-                      <option value="">-- Pilih --</option>
-                      {budgetCodes.map(b => <option key={b.id} value={b.id}>{b.code}</option>)}
-                    </Select>
+                    <SearchableSelect
+                      value={item.budget_code_id || ''}
+                      onChange={(val) => updateItem(item.id, 'budget_code_id', val)}
+                      options={budgetCodes.map(b => ({ value: b.id, label: `${b.code} — ${b.description}` }))}
+                      placeholder="-- Pilih kode budget --"
+                      searchPlaceholder="Cari kode atau deskripsi..."
+                      clearable
+                      clearLabel="-- Pilih --"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

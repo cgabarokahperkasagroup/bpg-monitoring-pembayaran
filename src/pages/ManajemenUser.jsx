@@ -9,9 +9,9 @@ import { Dialog, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '..
 import { Badge } from '../components/ui/badge'
 import { useMasterData } from '../context/MasterDataContext'
 import { useAuth } from '../context/AuthContext'
-import { updateUserProfile, toggleUserActive } from '../services/userService'
+import { updateUserProfile, toggleUserActive, deleteUser } from '../services/userService'
 import { supabase } from '../lib/supabase'
-import { Plus, Power, Search, UserCog, Eye, EyeOff } from 'lucide-react'
+import { Plus, Power, Search, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
 
 const roleLabels = {
   admin:   'Admin',
@@ -34,12 +34,16 @@ const EMPTY_FORM = { full_name: '', email: '', password: '', role: 'staff', depa
 
 export default function ManajemenUser() {
   const { users, departments, companies, businessUnits, reload } = useMasterData()
-  const [search, setSearch]     = useState('')
-  const [modal, setModal]       = useState(null)
-  const [form, setForm]         = useState(EMPTY_FORM)
-  const [editId, setEditId]     = useState(null)
-  const [saving, setSaving]     = useState(false)
-  const [showPass, setShowPass] = useState(false)
+  const { currentUser } = useAuth()
+  const isAdmin = currentUser?.role === 'admin'
+  const [search, setSearch]       = useState('')
+  const [modal, setModal]         = useState(null)
+  const [form, setForm]           = useState(EMPTY_FORM)
+  const [editId, setEditId]       = useState(null)
+  const [saving, setSaving]       = useState(false)
+  const [showPass, setShowPass]   = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting]   = useState(false)
 
   const filtered = users.filter(u =>
     u.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -125,6 +129,20 @@ export default function ManajemenUser() {
     }
   }
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deleteUser(deleteTarget.id)
+      await reload()
+      setDeleteTarget(null)
+    } catch (err) {
+      alert('Gagal menghapus: ' + err.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const getDeptName = (id) => departments.find(d => d.id === id)?.name || '—'
   const getCompany  = (id) => companies.find(c => c.id === id)?.code   || '—'
 
@@ -135,7 +153,7 @@ export default function ManajemenUser() {
           <h1 className="text-2xl font-bold text-gray-900">Manajemen User</h1>
           <p className="text-sm text-gray-500">{users.length} akun pengguna</p>
         </div>
-        <Button onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Tambah User</Button>
+        {isAdmin && <Button onClick={openAdd}><Plus className="h-4 w-4 mr-2" /> Tambah User</Button>}
       </div>
 
       <Card>
@@ -189,20 +207,33 @@ export default function ManajemenUser() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <div className="flex justify-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(u)} title="Edit">
-                      <UserCog className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={`h-8 w-8 ${u.is_active ? 'text-red-500 hover:text-red-700' : 'text-green-500 hover:text-green-700'}`}
-                      onClick={() => handleToggleActive(u)}
-                      title={u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                    >
-                      <Power className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {isAdmin ? (
+                    <div className="flex justify-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700" onClick={() => openEdit(u)} title="Edit user">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-8 w-8 ${u.is_active ? 'text-amber-500 hover:text-amber-600' : 'text-green-500 hover:text-green-700'}`}
+                        onClick={() => handleToggleActive(u)}
+                        title={u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                      >
+                        <Power className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-500 hover:text-red-700"
+                        onClick={() => setDeleteTarget(u)}
+                        title="Hapus user permanen"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-center text-xs text-gray-400">—</p>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -238,7 +269,7 @@ export default function ManajemenUser() {
                 type="email"
                 value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                placeholder="email@bgp.co.id"
+                placeholder="email@barokahperkasagroup.com"
                 disabled={!!editId}
               />
             </div>
@@ -319,6 +350,34 @@ export default function ManajemenUser() {
           <Button variant="outline" onClick={() => setModal(null)}>Batal</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? 'Menyimpan...' : editId ? 'Simpan Perubahan' : 'Buat Akun'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* Modal Konfirmasi Hapus User */}
+      <Dialog open={!!deleteTarget} onClose={() => !deleting && setDeleteTarget(null)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Hapus User Permanen</DialogTitle>
+        </DialogHeader>
+        <div className="mt-2 space-y-3 text-sm text-gray-600">
+          <p>
+            Anda akan menghapus permanen akun{' '}
+            <span className="font-semibold text-gray-900">{deleteTarget?.full_name}</span>{' '}
+            <span className="text-gray-500">({deleteTarget?.email})</span>.
+          </p>
+          <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-amber-800">
+            Tindakan ini tidak dapat dibatalkan. Jika user pernah membuat pengajuan, sistem akan menolak
+            penghapusan — gunakan <span className="font-medium">Nonaktifkan</span> sebagai gantinya.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Batal</Button>
+          <Button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {deleting ? 'Menghapus...' : 'Hapus Permanen'}
           </Button>
         </DialogFooter>
       </Dialog>

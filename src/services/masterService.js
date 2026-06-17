@@ -70,6 +70,25 @@ export async function deleteVessel(id) {
   if (error) throw error
 }
 
+// Sinkron data kapal dari API SMS (via Edge Function khusus admin).
+// Token API tersimpan di server; fungsi ini upsert ke tabel vessels lokal.
+export async function syncVesselsFromApi() {
+  const { data, error } = await supabase.functions.invoke('sync-vessels', { body: {} })
+  if (error) {
+    let message = error.message
+    try {
+      const ctx = error.context
+      if (ctx && typeof ctx.json === 'function') {
+        const body = await ctx.json()
+        if (body?.error) message = body.error
+      }
+    } catch { /* abaikan, pakai message default */ }
+    throw new Error(message)
+  }
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
 export async function upsertDepartment(record) {
   const { data, error } = await supabase.from('departments').upsert(record).select().single()
   if (error) throw error

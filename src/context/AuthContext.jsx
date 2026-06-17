@@ -7,26 +7,6 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    // Ambil session aktif saat pertama load
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        if (profile) setCurrentUser({ ...profile, authId: session.user.id })
-      }
-      setLoading(false)
-    })
-
-    // Dengarkan perubahan auth state (refresh token, tab baru, dll)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        setCurrentUser(null)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
   // Ambil profil dari user_profiles, return null jika tidak ada
   async function fetchProfile(userId) {
     const { data, error } = await supabase
@@ -40,6 +20,27 @@ export function AuthProvider({ children }) {
     }
     return data
   }
+
+  useEffect(() => {
+    // Ambil session aktif saat pertama load
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id)
+        if (profile) setCurrentUser({ ...profile, authId: session.user.id })
+      }
+      setLoading(false)
+    })
+
+    // Dengarkan perubahan auth state (refresh token, tab baru, dll)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const login = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
@@ -71,6 +72,7 @@ export function AuthProvider({ children }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext)
 }

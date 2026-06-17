@@ -24,21 +24,24 @@ export async function toggleUserActive(id, isActive) {
   return data
 }
 
-export async function createUserWithProfile(email, password, profileData) {
-  // Buat user di auth
-  const { data: authData, error: authError } = await supabase.auth.admin?.createUser({
-    email,
-    password,
-    email_confirm: true,
+// Hapus user permanen (akun auth + profil) via Edge Function khusus admin.
+// Ditolak oleh server jika user pernah membuat pengajuan.
+export async function deleteUser(userId) {
+  const { data, error } = await supabase.functions.invoke('delete-user', {
+    body: { user_id: userId },
   })
-  if (authError) throw authError
-
-  // Buat profile
-  const { data, error } = await supabase.from('user_profiles').insert({
-    id: authData.user.id,
-    email,
-    ...profileData,
-  }).select().single()
-  if (error) throw error
+  // Edge Function mengembalikan pesan error pada status non-2xx (mis. 409/403).
+  if (error) {
+    let message = error.message
+    try {
+      const ctx = error.context
+      if (ctx && typeof ctx.json === 'function') {
+        const body = await ctx.json()
+        if (body?.error) message = body.error
+      }
+    } catch { /* abaikan parse error, pakai message default */ }
+    throw new Error(message)
+  }
+  if (data?.error) throw new Error(data.error)
   return data
 }

@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import {
-  LayoutDashboard, FileText, PlusCircle, BarChart2, Ship, Building2, Users2, Package, DollarSign, UserCircle, X, ChevronDown, Briefcase, Layers,
+  LayoutDashboard, FileText, PlusCircle, BarChart2, Ship, Building2, Users2, Package, DollarSign, UserCircle, X, Briefcase, Layers,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 

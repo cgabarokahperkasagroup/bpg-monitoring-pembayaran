@@ -4,10 +4,14 @@ import { useMasterData } from '../context/MasterDataContext'
 
 // Role yang tidak dibatasi per BU (bisa lihat semua data)
 const UNRESTRICTED_ROLES = ['admin', 'viewer', 'bod']
+// Role yang WAJIB dibatasi ke BU-nya saja (tidak boleh lihat BU lain)
+const BU_RESTRICTED_ROLES = ['finance', 'head']
 
 export function useBusinessUnitFilter() {
   const { currentUser } = useAuth()
   const { companies } = useMasterData()
+
+  const isBuRestricted = !!currentUser && BU_RESTRICTED_ROLES.includes(currentUser.role)
 
   // BU ID user — null berarti tidak ada batasan BU
   const businessUnitId = useMemo(() => {
@@ -19,17 +23,20 @@ export function useBusinessUnitFilter() {
     return company?.business_unit_id ?? null
   }, [currentUser, companies])
 
-  // ID perusahaan dalam BU user
+  // ID perusahaan dalam BU user.
+  // null  = tidak ada batasan BU (admin/viewer/bod/staff)
+  // array = daftar perusahaan BU-nya (finance/head); [] jika BU tidak terpasang → tidak lihat apa pun
   const buCompanyIds = useMemo(() => {
-    if (!businessUnitId) return null
+    if (!isBuRestricted) return null
+    if (!businessUnitId) return []
     return companies
       .filter(c => c.business_unit_id === businessUnitId)
       .map(c => c.id)
-  }, [businessUnitId, companies])
+  }, [isBuRestricted, businessUnitId, companies])
 
   // Filter berdasarkan BU (untuk finance & head)
   const filterByBU = (forms) => {
-    if (!buCompanyIds) return forms
+    if (buCompanyIds === null) return forms
     return forms.filter(f => buCompanyIds.includes(f.company_id))
   }
 

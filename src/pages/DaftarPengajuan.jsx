@@ -13,7 +13,7 @@ import { formatRupiah, formatDate } from '../lib/utils'
 import { useAuth } from '../context/AuthContext'
 import {
   Search, Plus, Download, Eye, Pencil, ChevronLeft, ChevronRight,
-  Filter, FileDown,
+  FileDown, Upload,
 } from 'lucide-react'
 
 export default function DaftarPengajuan() {
@@ -100,12 +100,20 @@ export default function DaftarPengajuan() {
           <h1 className="text-2xl font-bold text-gray-900">Daftar Pengajuan</h1>
           <p className="text-sm text-gray-500">{filtered.length} form pengajuan ditemukan</p>
         </div>
-        {canCreate && (
-          <Button onClick={() => navigate('/pengajuan/baru')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Buat Pengajuan
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {currentUser?.role === 'admin' && (
+            <Button variant="outline" onClick={() => navigate('/pengajuan/import')}>
+              <Upload className="h-4 w-4 mr-2" />
+              Import Excel
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => navigate('/pengajuan/baru')}>
+              <Plus className="h-4 w-4 mr-2" />
+              Buat Pengajuan
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

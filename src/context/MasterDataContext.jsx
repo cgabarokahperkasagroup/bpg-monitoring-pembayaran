@@ -23,10 +23,12 @@ export function MasterDataProvider({ children }) {
 
   useEffect(() => {
     if (!currentUser) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false)
       return
     }
     loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser])
 
   async function loadAll() {
@@ -57,6 +59,7 @@ export function MasterDataProvider({ children }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useMasterData() {
   return useContext(MasterDataContext)
 }

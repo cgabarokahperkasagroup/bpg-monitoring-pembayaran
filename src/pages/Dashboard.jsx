@@ -10,6 +10,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select } from '../components/ui/select'
+import { SearchableSelect } from '../components/ui/searchable-select'
 import StatusBadge from '../components/StatusBadge'
 import { useMasterData } from '../context/MasterDataContext'
 import { getPaymentForms, getAllPaymentItemTotals } from '../services/paymentService'
@@ -21,7 +22,7 @@ import {
 } from 'lucide-react'
 
 const PIE_COLORS = ['#1d4ed8', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe']
-const EMPTY_FILTER = { business_unit_id: '', department_id: '', date_from: '', date_to: '', vendor_id: '' }
+const EMPTY_FILTER = { business_unit_id: '', department_id: '', date_from: '', date_to: '', vendor_id: '', pic_name: '' }
 
 function KpiCard({ title, value, subtitle, icon: Icon, color }) {
   const bgMap = {
@@ -104,9 +105,16 @@ export default function Dashboard() {
       if (filter.date_from && f.submission_date < filter.date_from) return false
       if (filter.date_to && f.submission_date > filter.date_to) return false
       if (filter.vendor_id && f.vendor_id !== filter.vendor_id) return false
+      if (filter.pic_name && f.pic_name !== filter.pic_name) return false
       return true
     })
   }, [filter, paymentForms, companies])
+
+  // Daftar nama PIC unik dari data yang bisa diakses user (untuk dropdown filter)
+  const picOptions = useMemo(() => {
+    const names = [...new Set(paymentForms.map(f => f.pic_name).filter(Boolean))]
+    return names.sort((a, b) => a.localeCompare(b)).map(n => ({ value: n, label: n }))
+  }, [paymentForms])
 
   const hasDateFilter = !!(filter.date_from || filter.date_to)
 
@@ -189,7 +197,6 @@ export default function Dashboard() {
   }, [paymentForms, itemTotals])
 
   const recentForms = [...filteredForms].slice(0, 6)
-  const getVendorName = (form) => form.vendor_name_raw || vendors.find(v => v.id === form.vendor_id)?.name || '-'
 
   if (loadingData) {
     return (
@@ -254,6 +261,19 @@ export default function Dashboard() {
                   <option key={v.id} value={v.id}>{v.name}</option>
                 ))}
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-500 font-medium">PIC Pengaju</Label>
+              <SearchableSelect
+                value={filter.pic_name}
+                onChange={(val) => setF('pic_name', val)}
+                options={picOptions}
+                placeholder="Semua PIC"
+                searchPlaceholder="Cari nama PIC..."
+                emptyText="Belum ada data PIC"
+                clearable
+                clearLabel="Semua PIC"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500 font-medium">Rentang Tanggal</Label>
